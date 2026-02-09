@@ -1,6 +1,6 @@
 # 📸 MediaSnap
 
-> Archive Instagram profiles and YouTube channels with style!
+> Archive Instagram profiles, YouTube channels, and LinkedIn content with style!
 
 <div align="center">
 
@@ -22,6 +22,13 @@
   - High-quality video downloads
   - Organized by video title
   - Progress tracking for each video
+
+- 🔗 **LinkedIn Content Archiving** - Download LinkedIn profiles and company pages
+  - Profile posts, articles, and updates
+  - Company page content and announcements
+  - Media files: images, videos, documents, PDFs
+  - Smart folder organization
+  - ⚠️ **Warning**: May violate LinkedIn ToS - use at your own risk
 
 - 🎨 **Beautiful Modern UI** - Built with ttkbootstrap
   - Real-time statistics dashboard
@@ -50,7 +57,10 @@ brew install ffmpeg  # macOS
 # or run: ./setup_youtube.sh
 
 # (Required for Instagram) Login once
-python login.py
+python scripts/login.py
+
+# (Optional for LinkedIn) Authenticate
+python scripts/linkedin_login.py
 ```
 
 ### Run
@@ -134,7 +144,7 @@ MediaSnap/
 For Instagram downloads, you need to authenticate once:
 
 ```bash
-python login.py
+python scripts/login.py
 ```
 
 This saves a session file to avoid 403 errors. Safe and secure - your password is NOT stored.
@@ -148,10 +158,20 @@ For best quality YouTube downloads (optional):
 brew install ffmpeg deno
 
 # Or use our setup script
-./setup_youtube.sh
+./scripts/setup_youtube.sh
 ```
 
 See [YOUTUBE_SETUP.md](YOUTUBE_SETUP.md) for details.
+
+### LinkedIn Setup
+
+For LinkedIn downloads (optional, use at your own risk):
+
+```bash
+python scripts/linkedin_login.py
+```
+
+⚠️ **Important**: Using automated tools with LinkedIn may violate their Terms of Service and could result in account restrictions. See [LINKEDIN_SETUP.md](LINKEDIN_SETUP.md) for full details and warnings.
 
 ## 🎯 Usage Examples
 
@@ -168,6 +188,12 @@ Input: https://www.youtube.com/@MrBeast
        https://www.youtube.com/c/ChannelName
 ```
 
+### LinkedIn Profile or Company
+```
+Input: https://www.linkedin.com/in/username
+       https://www.linkedin.com/company/companyname
+```
+
 ## 📊 Download Organization
 
 ```
@@ -177,10 +203,22 @@ downloads/
 │   ├── images/          # Single images
 │   ├── carousel/        # Multi-image posts
 │   └── tagged/          # Posts with hashtags
-└── youtube/
-    └── channel_name/
-        ├── Video Title 1.mp4
-        └── Video Title 2.mp4
+├── youtube/
+│   └── channel_name/
+│       ├── Video Title 1.mp4
+│       └── Video Title 2.mp4
+└── linkedin/
+    ├── profile_username/
+    │   ├── profile_info.json
+    │   ├── posts/
+    │   ├── articles/
+    │   ├── videos/
+    │   └── documents/
+    └── company_name/
+        ├── company_info.json
+        ├── posts/
+        ├── videos/
+        └── documents/
 ```
 
 ## 🤝 Contributing
@@ -203,12 +241,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Instagram**: Only works with public profiles. Respects Instagram's Terms of Service.
 - **YouTube**: For personal archival use. Respect content creators' rights.
-- **Rate Limits**: Instagram may rate-limit requests. Use responsibly.
+- **LinkedIn**: **May violate LinkedIn's Terms of Service.** Account restrictions/bans possible. See [LINKEDIN_SETUP.md](LINKEDIN_SETUP.md) for full warnings. **Use at your own risk.**
+- **Rate Limits**: All platforms may rate-limit requests. Use responsibly.
 
 ## 🙏 Acknowledgments
 
 - [instaloader](https://github.com/instaloader/instaloader) - Instagram scraping
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloading
+- [linkedin-api](https://github.com/tomquirk/linkedin-api) - LinkedIn API (unofficial)
 - [ttkbootstrap](https://github.com/israel-dryer/ttkbootstrap) - Beautiful UI
 - [SQLAlchemy](https://www.sqlalchemy.org/) - Database ORM
 
@@ -218,6 +258,7 @@ For issues or questions:
 - [Open an issue](https://github.com/YOUR_USERNAME/MediaSnap/issues)
 - Check [BUILD.md](BUILD.md) for build troubleshooting
 - See [YOUTUBE_SETUP.md](YOUTUBE_SETUP.md) for YouTube setup help
+- See [LINKEDIN_SETUP.md](LINKEDIN_SETUP.md) for LinkedIn setup and warnings
 
 ---
 

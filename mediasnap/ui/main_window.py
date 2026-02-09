@@ -178,7 +178,7 @@ class MainWindow(ttkb.Window):
         # Input label with icon
         ttk.Label(
             input_container,
-            text="🔗 Instagram Username/URL or YouTube Channel URL",
+            text="🔗 Instagram, YouTube, or LinkedIn Profile URL",
             font=("Helvetica", 12, "bold"),
             bootstyle="primary",
         ).pack(anchor=W, pady=(0, PAD_SMALL))
@@ -278,10 +278,15 @@ class MainWindow(ttkb.Window):
             self._start_youtube_fetch(input_text)
             return
         
+        # Check if it's a LinkedIn URL
+        if self._is_linkedin_url(input_text):
+            self._start_linkedin_fetch(input_text)
+            return
+        
         # Extract username from Instagram URL or clean input
         username = self._extract_username(input_text)
         if not username:
-            self._set_status("❌ Invalid Instagram or YouTube URL", bootstyle=WARNING)
+            self._set_status("❌ Invalid Instagram, YouTube, or LinkedIn URL", bootstyle=WARNING)
             return
         
         # Start Instagram fetch
@@ -294,6 +299,15 @@ class MainWindow(ttkb.Window):
             r'(?:https?://)?(?:www\.)?youtube\.com/(?:c/|channel/|@|user/)',
             r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=',
             r'(?:https?://)?youtu\.be/',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_linkedin_url(self, url: str) -> bool:
+        """Check if URL is a LinkedIn URL."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?linkedin\.com/in/',  # Profile
+            r'(?:https?://)?(?:www\.)?linkedin\.com/company/',  # Company
         ]
         return any(re.search(pattern, url) for pattern in patterns)
     
@@ -323,6 +337,34 @@ class MainWindow(ttkb.Window):
             self.after(0, self._update_progress, stage, current, total, message)
         
         coro = self.service.download_youtube_channel(channel_url, progress_callback)
+        self.current_future = self.async_executor.submit(coro)
+        
+        # Poll for completion
+        self._check_future_status()
+    
+    def _start_linkedin_fetch(self, profile_url: str) -> None:
+        """Start fetching LinkedIn profile in background."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Starting LinkedIn download...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗")
+        self._log(f"║  Downloading LinkedIn Profile  ║")
+        self._log(f"╚═══════════════════════════════════╝")
+        self._log(f"🔗 URL: {profile_url}")
+        self._log("")
+        self._log("💡 LinkedIn requires authentication")
+        self._log("   Run scripts/linkedin_login.py if you haven't already")
+        self._log("   📖 See LINKEDIN_SETUP.md for details")
+        
+        # Submit async task
+        def progress_callback(stage, current, total, message):
+            # Schedule UI update on main thread
+            self.after(0, self._update_progress, stage, current, total, message)
+        
+        coro = self.service.download_linkedin_profile(profile_url, progress_callback)
         self.current_future = self.async_executor.submit(coro)
         
         # Poll for completion
@@ -422,7 +464,7 @@ class MainWindow(ttkb.Window):
             # Success
             self.progress_bar["value"] = 100
             
-            # Different messages for Instagram vs YouTube
+            # Different messages for Instagram vs YouTube vs LinkedIn
             if summary.platform == "youtube":
                 if summary.new_posts > 0:
                     status = (
@@ -435,6 +477,19 @@ class MainWindow(ttkb.Window):
                     status = "✅ YouTube download complete"
                     self._set_status(status, bootstyle=SUCCESS)
                     self._log("✅ No new videos to download")
+            elif summary.platform == "linkedin":
+                if summary.new_posts > 0:
+                    status = (
+                        f"✅ Success! Downloaded {summary.media_downloaded} items from LinkedIn"
+                    )
+                    self._set_status(status, bootstyle=SUCCESS)
+                    self._log(f"✅ Success! {summary.media_downloaded} items downloaded")
+                    self._log(f"   📁 Saved to: {summary.download_path}")
+                    self._log(f"   📂 Organized into: posts/, articles/, videos/, documents/")
+                else:
+                    status = "✅ LinkedIn download complete"
+                    self._set_status(status, bootstyle=SUCCESS)
+                    self._log("✅ No new content to download")
             else:
                 if summary.new_posts > 0:
                     status = (

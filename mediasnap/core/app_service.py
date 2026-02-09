@@ -13,6 +13,7 @@ from mediasnap.core.exceptions import (
 )
 from mediasnap.core.scraper import InstagramScraper
 from mediasnap.core.youtube_downloader import YouTubeDownloader
+from mediasnap.core.linkedin_downloader import LinkedInDownloader
 from mediasnap.models.data_models import PostData, ProfileData
 from mediasnap.storage.database import get_async_session
 from mediasnap.storage.repository import MediaRepository, PostRepository, ProfileRepository
@@ -35,7 +36,7 @@ class FetchSummary:
     errors: list[str]
     success: bool
     download_path: str = ""
-    platform: str = "instagram"  # 'instagram' or 'youtube'
+    platform: str = "instagram"  # 'instagram', 'youtube', or 'linkedin'
 
 
 class MediaSnapService:
@@ -382,4 +383,52 @@ class MediaSnapService:
                 errors=[f"YouTube download failed: {str(e)}"],
                 success=False,
                 platform="youtube",
+            )
+    
+    async def download_linkedin_profile(
+        self,
+        profile_url: str,
+        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+    ) -> FetchSummary:
+        """
+        Download all content from a LinkedIn profile or company page.
+        
+        Args:
+            profile_url: LinkedIn profile or company page URL
+            progress_callback: Optional callback(stage, current, total, message)
+        
+        Returns:
+            FetchSummary object
+        """
+        try:
+            downloader = LinkedInDownloader()
+            result = await downloader.download_profile(profile_url, progress_callback)
+            
+            return FetchSummary(
+                username=result["identifier"],
+                profile_id="",
+                total_posts_found=result["downloaded"] + result["failed"],
+                new_posts=result["downloaded"],
+                existing_posts=0,
+                media_downloaded=result["downloaded"],
+                media_failed=result["failed"],
+                errors=result.get("failed_items", []),
+                success=result["success"],
+                download_path=result["download_path"],
+                platform="linkedin",
+            )
+            
+        except Exception as e:
+            logger.exception(f"LinkedIn download failed for {profile_url}")
+            return FetchSummary(
+                username=profile_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                errors=[f"LinkedIn download failed: {str(e)}"],
+                success=False,
+                platform="linkedin",
             )
