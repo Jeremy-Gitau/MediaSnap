@@ -3,10 +3,10 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mediasnap.models.schema import Media, Post, Profile
+from mediasnap.models.schema import Media, Post, Profile, DownloadHistory
 from mediasnap.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -258,3 +258,116 @@ class MediaRepository:
             .order_by(Media.order)
         )
         return list(result.scalars().all())
+
+
+class DownloadHistoryRepository:
+    """Repository for DownloadHistory operations."""
+    
+    @staticmethod
+    async def create(session: AsyncSession, history_data: dict) -> DownloadHistory:
+        """
+        Create a new download history record.
+        
+        Args:
+            session: Database session
+            history_data: Download history data dictionary
+        
+        Returns:
+            DownloadHistory instance
+        """
+        history = DownloadHistory(**history_data)
+        session.add(history)
+        await session.flush()
+        logger.debug(f"Created download history record: {history.platform} - {history.url[:50]}")
+        return history
+    
+    @staticmethod
+    async def get_recent(session: AsyncSession, limit: int = 50) -> List[DownloadHistory]:
+        """
+        Get recent download history records.
+        
+        Args:
+            session: Database session
+            limit: Maximum number of records to return
+        
+        Returns:
+            List of DownloadHistory instances
+        """
+        result = await session.execute(
+            select(DownloadHistory)
+            .order_by(desc(DownloadHistory.started_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+    
+    @staticmethod
+    async def get_by_platform(
+        session: AsyncSession, 
+        platform: str, 
+        limit: int = 50
+    ) -> List[DownloadHistory]:
+        """
+        Get download history for a specific platform.
+        
+        Args:
+            session: Database session
+            platform: Platform name (instagram, youtube, linkedin)
+            limit: Maximum number of records to return
+        
+        Returns:
+            List of DownloadHistory instances
+        """
+        result = await session.execute(
+            select(DownloadHistory)
+            .where(DownloadHistory.platform == platform)
+            .order_by(desc(DownloadHistory.started_at))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+    
+    @staticmethod
+    async def get_by_url(session: AsyncSession, url: str) -> List[DownloadHistory]:
+        """
+        Get download history for a specific URL.
+        
+        Args:
+            session: Database session
+            url: URL to search for
+        
+        Returns:
+            List of DownloadHistory instances
+        """
+        result = await session.execute(
+            select(DownloadHistory)
+            .where(DownloadHistory.url == url)
+            .order_by(desc(DownloadHistory.started_at))
+        )
+        return list(result.scalars().all())
+    
+    @staticmethod
+    async def get_stats(session: AsyncSession) -> dict:
+        """
+        Get overall download statistics.
+        
+        Args:
+            session: Database session
+        
+        Returns:
+            Dictionary with statistics
+        """
+        from sqlalchemy import func
+        
+        result = await session.execute(
+            select(
+                func.count(DownloadHistory.id).label('total_downloads'),
+                func.sum(DownloadHistory.new_items).label('total_items'),
+                func.sum(DownloadHistory.failed_items).label('total_failures'),
+            )
+        )
+        stats = result.one()
+        
+        return {
+            'total_downloads': stats.total_downloads or 0,
+            'total_items': stats.total_items or 0,
+            'total_failures': stats.total_failures or 0,
+        }

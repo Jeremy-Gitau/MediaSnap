@@ -120,3 +120,37 @@ class Media(Base):
     
     def __repr__(self) -> str:
         return f"<Media(id={self.id}, post='{self.post_shortcode}', type='{self.media_type}')>"
+
+
+class DownloadHistory(Base):
+    """Download history tracking for all platforms."""
+    
+    __tablename__ = "download_history"
+    
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    
+    # Download information
+    url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # instagram, youtube, linkedin
+    username: Mapped[Optional[str]] = mapped_column(String(200))
+    
+    # Statistics
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    new_items: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_items: Mapped[int] = mapped_column(Integer, default=0)
+    failed_items: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Status
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    
+    # Paths
+    download_path: Mapped[Optional[str]] = mapped_column(Text)
+    
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self) -> str:
+        return f"<DownloadHistory(id={self.id}, platform='{self.platform}', url='{self.url[:50]}', started_at='{self.started_at}')>"

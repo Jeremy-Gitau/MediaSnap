@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+from datetime import datetime
 
 from mediasnap.core.downloader import MediaDownloader
 from mediasnap.core.exceptions import (
@@ -16,7 +17,12 @@ from mediasnap.core.youtube_downloader import YouTubeDownloader
 from mediasnap.core.linkedin_downloader import LinkedInDownloader
 from mediasnap.models.data_models import PostData, ProfileData
 from mediasnap.storage.database import get_async_session
-from mediasnap.storage.repository import MediaRepository, PostRepository, ProfileRepository
+from mediasnap.storage.repository import (
+    MediaRepository, 
+    PostRepository, 
+    ProfileRepository,
+    DownloadHistoryRepository,
+)
 from mediasnap.utils.config import DOWNLOAD_DIR
 from mediasnap.utils.logging import get_logger
 
@@ -48,6 +54,41 @@ class MediaSnapService:
     def __init__(self):
         """Initialize service."""
         self.scraper = InstagramScraper()
+    
+    async def _save_download_history(
+        self,
+        url: str,
+        summary: FetchSummary,
+        started_at: datetime,
+    ) -> None:
+        """
+        Save download history to database.
+        
+        Args:
+            url: Original URL/username
+            summary: FetchSummary object
+            started_at: Download start time
+        """
+        try:
+            async with get_async_session() as session:
+                history_data = {
+                    'url': url,
+                    'platform': summary.platform,
+                    'username': summary.username,
+                    'total_items': summary.total_posts_found,
+                    'new_items': summary.new_posts,
+                    'skipped_items': summary.skipped_posts,
+                    'failed_items': summary.media_failed,
+                    'success': summary.success,
+                    'error_message': ', '.join(summary.errors) if summary.errors else None,
+                    'download_path': summary.download_path,
+                    'started_at': started_at,
+                    'completed_at': datetime.utcnow(),
+                }
+                await DownloadHistoryRepository.create(session, history_data)
+                logger.debug(f"Saved download history for {url}")
+        except Exception as e:
+            logger.error(f"Failed to save download history: {e}")
     
     def _get_folder_for_post(self, post: PostData) -> str:
         """
@@ -99,6 +140,7 @@ class MediaSnapService:
         Returns:
             FetchSummary object
         """
+        started_at = datetime.utcnow()
         errors = []
         
         def report_progress(stage: str, current: int, total: int, message: str = ""):
@@ -114,7 +156,7 @@ class MediaSnapService:
             try:
                 profile_data = await self.scraper.fetch_profile(username)
             except ProfileNotFoundError as e:
-                return FetchSummary(
+                summary = FetchSummary(
                     username=username,
                     profile_id="",
                     total_posts_found=0,
@@ -125,8 +167,10 @@ class MediaSnapService:
                     errors=[f"Profile not found: {username}"],
                     success=False,
                 )
+                await self._save_download_history(username, summary, started_at)
+                return summary
             except RateLimitedError as e:
-                return FetchSummary(
+                summary = FetchSummary(
                     username=username,
                     profile_id="",
                     total_posts_found=0,
@@ -137,8 +181,10 @@ class MediaSnapService:
                     errors=["Rate limited by Instagram. Please wait and try again later."],
                     success=False,
                 )
+                await self._save_download_history(username, summary, started_at)
+                return summary
             except ScrapingFailedError as e:
-                return FetchSummary(
+                summary = FetchSummary(
                     username=username,
                     profile_id="",
                     total_posts_found=0,
@@ -149,6 +195,8 @@ class MediaSnapService:
                     errors=[f"Failed to scrape profile: {str(e)}"],
                     success=False,
                 )
+                await self._save_download_history(username, summary, started_at)
+                return summary
             
             report_progress("Fetching", 20, 100, f"Found {len(profile_data.posts)} posts")
             
@@ -310,7 +358,7 @@ class MediaSnapService:
             
             report_progress("Complete", 100, 100, "Fetch complete!")
             
-            return FetchSummary(
+            summary = FetchSummary(
                 username=username,
                 profile_id=profile_data.instagram_id,
                 total_posts_found=len(profile_data.posts),
@@ -323,10 +371,15 @@ class MediaSnapService:
                 download_path=str(username_dir),
                 platform="instagram",
             )
+            
+            # Save to history
+            await self._save_download_history(username, summary, started_at)
+            
+            return summary
         
         except Exception as e:
             logger.exception(f"Unexpected error in fetch_and_save_profile for {username}")
-            return FetchSummary(
+            summary = FetchSummary(
                 username=username,
                 profile_id="",
                 total_posts_found=0,
@@ -337,6 +390,8 @@ class MediaSnapService:
                 errors=[f"Unexpected error: {str(e)}"],
                 success=False,
             )
+            await self._save_download_history(username, summary, started_at)
+            return summary
     
     async def download_youtube_channel(
         self,
@@ -353,11 +408,12 @@ class MediaSnapService:
         Returns:
             FetchSummary object
         """
+        started_at = datetime.utcnow()
         try:
             downloader = YouTubeDownloader()
             result = await downloader.download_channel(channel_url, progress_callback)
             
-            return FetchSummary(
+            summary = FetchSummary(
                 username=result["channel_name"],
                 profile_id="",
                 total_posts_found=result["downloaded"] + result.get("skipped", 0) + result["failed"],
@@ -372,9 +428,14 @@ class MediaSnapService:
                 platform="youtube",
             )
             
+            # Save to history
+            await self._save_download_history(channel_url, summary, started_at)
+            
+            return summary
+            
         except Exception as e:
             logger.exception(f"YouTube download failed for {channel_url}")
-            return FetchSummary(
+            summary = FetchSummary(
                 username=channel_url,
                 profile_id="",
                 total_posts_found=0,
@@ -386,6 +447,8 @@ class MediaSnapService:
                 success=False,
                 platform="youtube",
             )
+            await self._save_download_history(channel_url, summary, started_at)
+            return summary
     
     async def download_linkedin_profile(
         self,
@@ -402,11 +465,12 @@ class MediaSnapService:
         Returns:
             FetchSummary object
         """
+        started_at = datetime.utcnow()
         try:
             downloader = LinkedInDownloader()
             result = await downloader.download_profile(profile_url, progress_callback)
             
-            return FetchSummary(
+            summary = FetchSummary(
                 username=result["identifier"],
                 profile_id="",
                 total_posts_found=result["downloaded"] + result["failed"],
@@ -420,9 +484,14 @@ class MediaSnapService:
                 platform="linkedin",
             )
             
+            # Save to history
+            await self._save_download_history(profile_url, summary, started_at)
+            
+            return summary
+            
         except Exception as e:
             logger.exception(f"LinkedIn download failed for {profile_url}")
-            return FetchSummary(
+            summary = FetchSummary(
                 username=profile_url,
                 profile_id="",
                 total_posts_found=0,
@@ -434,3 +503,5 @@ class MediaSnapService:
                 success=False,
                 platform="linkedin",
             )
+            await self._save_download_history(profile_url, summary, started_at)
+            return summary
