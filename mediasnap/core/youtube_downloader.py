@@ -84,6 +84,9 @@ class YouTubeDownloader:
         if not has_ffmpeg:
             logger.warning("ffmpeg not found - videos will be downloaded in single-file format (may be lower quality)")
         
+        # Check if aria2c is available for faster downloads
+        has_aria2c = shutil.which("aria2c") is not None
+        
         # Configure yt-dlp options
         if has_ffmpeg:
             # Best quality with merging (requires ffmpeg)
@@ -107,7 +110,24 @@ class YouTubeDownloader:
             'writesubtitles': False,
             'writethumbnail': False,
             'merge_output_format': 'mp4',
+            # Performance optimizations
+            'concurrent_fragment_downloads': 5,  # Download 5 fragments at once
+            'retries': 3,  # Limit retries
+            'fragment_retries': 3,
+            'skip_unavailable_fragments': True,
+            'continuedl': True,  # Resume partial downloads
+            'noprogress': False,
+            'http_chunk_size': 10485760,  # 10MB chunks
+            'buffersize': 1024 * 64,  # 64KB buffer
+            # Use external downloader if available (much faster)
+            'external_downloader': 'aria2c' if has_aria2c else None,
+            'external_downloader_args': ['-x', '16', '-s', '16', '-k', '1M'] if has_aria2c else None,
         }
+        
+        if has_aria2c:
+            logger.info("🚀 Using aria2c for faster downloads (16 connections per file)")
+        else:
+            logger.info("💡 Install aria2c for faster downloads: brew install aria2")
         
         try:
             # Run yt-dlp in thread pool (it's blocking)
