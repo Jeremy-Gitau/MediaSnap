@@ -149,6 +149,20 @@ python scripts/login.py
 
 This saves a session file to avoid 403 errors. Safe and secure - your password is NOT stored.
 
+### VPN Setup (Optional, Recommended)
+
+To avoid IP blocking and rate limiting:
+
+```bash
+# Set up VPN client on your Mac
+./scripts/setup_vpn_client.sh
+
+# Connect before using MediaSnap
+sudo scripts/connect_vpn.sh connect mediasnap.conf
+```
+
+See [VPN_SETUP.md](VPN_SETUP.md) for complete VPN server setup and usage guide.
+
 ### YouTube Setup
 
 For best quality YouTube downloads (optional):
