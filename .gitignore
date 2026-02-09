@@ -32,7 +32,8 @@ venv.bak/
 
 # PyInstaller
 *.manifest
-*.spec
+# Allow build_windows.spec for project builds
+!build_windows.spec
 
 # IDEs
 .vscode/
