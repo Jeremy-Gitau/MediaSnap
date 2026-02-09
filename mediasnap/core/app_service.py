@@ -6,6 +6,7 @@ from typing import Callable, Optional
 from datetime import datetime
 
 from mediasnap.core.downloader import MediaDownloader
+from mediasnap.core.download_controller import DownloadController
 from mediasnap.core.exceptions import (
     DownloadError,
     ProfileNotFoundError,
@@ -39,11 +40,16 @@ class FetchSummary:
     existing_posts: int
     media_downloaded: int
     media_failed: int
+    errors: list[str] = None
+    success: bool = False
     skipped_posts: int = 0  # Posts skipped (already downloaded)
-    errors: list[str]
-    success: bool
     download_path: str = ""
     platform: str = "instagram"  # 'instagram', 'youtube', or 'linkedin'
+    
+    def __post_init__(self):
+        """Initialize mutable defaults."""
+        if self.errors is None:
+            self.errors = []
 
 
 class MediaSnapService:
@@ -122,6 +128,7 @@ class MediaSnapService:
         self,
         username: str,
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        controller: Optional[DownloadController] = None,
     ) -> FetchSummary:
         """
         Fetch profile data and save to database with media download.
@@ -142,6 +149,10 @@ class MediaSnapService:
         """
         started_at = datetime.utcnow()
         errors = []
+        
+        # Create controller if not provided
+        if controller is None:
+            controller = DownloadController()
         
         def report_progress(stage: str, current: int, total: int, message: str = ""):
             """Internal progress reporter."""
@@ -324,6 +335,10 @@ class MediaSnapService:
             async with MediaDownloader() as downloader:
                 for idx, (url, filepath, shortcode, order) in enumerate(downloads):
                     try:
+                        # Check if paused or cancelled
+                        await controller.wait_if_paused()
+                        controller.check_cancelled()
+                        
                         def download_progress(current: int, total: int, filename: str):
                             progress = 40 + int((idx + (current / total if total > 0 else 0)) / len(downloads) * 50)
                             report_progress(
@@ -375,6 +390,24 @@ class MediaSnapService:
             # Save to history
             await self._save_download_history(username, summary, started_at)
             
+            controller.complete()
+            return summary
+        
+        except asyncio.CancelledError:
+            logger.info(f"Download cancelled for {username}")
+            summary = FetchSummary(
+                username=username,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                errors=["Download cancelled by user"],
+                success=False,
+            )
+            controller.cancel()
+            await self._save_download_history(username, summary, started_at)
             return summary
         
         except Exception as e:
@@ -390,6 +423,7 @@ class MediaSnapService:
                 errors=[f"Unexpected error: {str(e)}"],
                 success=False,
             )
+            controller.fail()
             await self._save_download_history(username, summary, started_at)
             return summary
     
@@ -397,6 +431,7 @@ class MediaSnapService:
         self,
         channel_url: str,
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        controller: Optional[DownloadController] = None,
     ) -> FetchSummary:
         """
         Download all videos from a YouTube channel.
@@ -404,11 +439,17 @@ class MediaSnapService:
         Args:
             channel_url: YouTube channel URL
             progress_callback: Optional callback(stage, current, total, message)
+            controller: Optional download controller for pause/resume/cancel
         
         Returns:
             FetchSummary object
         """
         started_at = datetime.utcnow()
+        
+        # Create controller if not provided
+        if controller is None:
+            controller = DownloadController()
+        
         try:
             downloader = YouTubeDownloader()
             result = await downloader.download_channel(channel_url, progress_callback)
@@ -431,6 +472,25 @@ class MediaSnapService:
             # Save to history
             await self._save_download_history(channel_url, summary, started_at)
             
+            controller.complete()
+            return summary
+        
+        except asyncio.CancelledError:
+            logger.info(f"YouTube download cancelled for {channel_url}")
+            summary = FetchSummary(
+                username=channel_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                errors=["Download cancelled by user"],
+                success=False,
+                platform="youtube",
+            )
+            controller.cancel()
+            await self._save_download_history(channel_url, summary, started_at)
             return summary
             
         except Exception as e:
@@ -447,6 +507,7 @@ class MediaSnapService:
                 success=False,
                 platform="youtube",
             )
+            controller.fail()
             await self._save_download_history(channel_url, summary, started_at)
             return summary
     
@@ -454,6 +515,7 @@ class MediaSnapService:
         self,
         profile_url: str,
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        controller: Optional[DownloadController] = None,
     ) -> FetchSummary:
         """
         Download all content from a LinkedIn profile or company page.
@@ -461,11 +523,17 @@ class MediaSnapService:
         Args:
             profile_url: LinkedIn profile or company page URL
             progress_callback: Optional callback(stage, current, total, message)
+            controller: Optional download controller for pause/resume/cancel
         
         Returns:
             FetchSummary object
         """
         started_at = datetime.utcnow()
+        
+        # Create controller if not provided
+        if controller is None:
+            controller = DownloadController()
+        
         try:
             downloader = LinkedInDownloader()
             result = await downloader.download_profile(profile_url, progress_callback)
@@ -487,8 +555,27 @@ class MediaSnapService:
             # Save to history
             await self._save_download_history(profile_url, summary, started_at)
             
+            controller.complete()
             return summary
-            
+        
+        except asyncio.CancelledError:
+            logger.info(f"LinkedIn download cancelled for {profile_url}")
+            summary = FetchSummary(
+                username=profile_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                errors=["Download cancelled by user"],
+                success=False,
+                platform="linkedin",
+            )
+            controller.cancel()
+            await self._save_download_history(profile_url, summary, started_at)
+            return summary
+        
         except Exception as e:
             logger.exception(f"LinkedIn download failed for {profile_url}")
             summary = FetchSummary(
@@ -503,5 +590,4 @@ class MediaSnapService:
                 success=False,
                 platform="linkedin",
             )
-            await self._save_download_history(profile_url, summary, started_at)
-            return summary
+            controller.fail()

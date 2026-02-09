@@ -11,6 +11,7 @@ from ttkbootstrap.constants import *
 
 from mediasnap import __version__
 from mediasnap.core.app_service import MediaSnapService, FetchSummary
+from mediasnap.core.download_controller import DownloadController, DownloadState
 from mediasnap.storage.database import close_db, init_db
 from mediasnap.ui.async_bridge import AsyncExecutor
 from mediasnap.ui.styles import (
@@ -51,6 +52,7 @@ class MainWindow(ttkb.Window):
         # State
         self.is_fetching = False
         self.current_future: Optional[Future] = None
+        self.controller: Optional[DownloadController] = None
         
         # Statistics tracking
         self.total_profiles = 0
@@ -206,6 +208,37 @@ class MainWindow(ttkb.Window):
         )
         self.fetch_button.pack(side=LEFT)
         
+        # Control buttons (pause/resume/cancel) - initially hidden
+        control_frame = ttk.Frame(input_row)
+        control_frame.pack(side=LEFT, padx=(PAD_SMALL, 0))
+        
+        self.pause_button = ttk.Button(
+            control_frame,
+            text="⏸ Pause",
+            command=self._on_pause_clicked,
+            bootstyle="warning",
+            width=10,
+        )
+        
+        self.resume_button = ttk.Button(
+            control_frame,
+            text="▶️ Resume",
+            command=self._on_resume_clicked,
+            bootstyle="info",
+            width=10,
+        )
+        
+        self.cancel_button = ttk.Button(
+            control_frame,
+            text="❌ Cancel",
+            command=self._on_cancel_clicked,
+            bootstyle="danger",
+            width=10,
+        )
+        
+        # Initially hide control buttons
+        self._hide_control_buttons()
+        
         # Progress section with modern design
         progress_container = ttk.LabelFrame(
             main_frame,
@@ -336,8 +369,14 @@ class MainWindow(ttkb.Window):
             # Schedule UI update on main thread
             self.after(0, self._update_progress, stage, current, total, message)
         
-        coro = self.service.download_youtube_channel(channel_url, progress_callback)
+        # Create download controller
+        self.controller = DownloadController()
+        
+        coro = self.service.download_youtube_channel(channel_url, progress_callback, self.controller)
         self.current_future = self.async_executor.submit(coro)
+        
+        # Show control buttons
+        self._show_control_buttons()
         
         # Poll for completion
         self._check_future_status()
@@ -364,8 +403,14 @@ class MainWindow(ttkb.Window):
             # Schedule UI update on main thread
             self.after(0, self._update_progress, stage, current, total, message)
         
-        coro = self.service.download_linkedin_profile(profile_url, progress_callback)
+        # Create download controller
+        self.controller = DownloadController()
+        
+        coro = self.service.download_linkedin_profile(profile_url, progress_callback, self.controller)
         self.current_future = self.async_executor.submit(coro)
+        
+        # Show control buttons
+        self._show_control_buttons()
         
         # Poll for completion
         self._check_future_status()
@@ -384,14 +429,63 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            # Schedule UI update on main thread
+            #Schedule UI update on main thread
             self.after(0, self._update_progress, stage, current, total, message)
         
-        coro = self.service.fetch_and_save_profile(username, progress_callback)
+        # Create download controller
+        self.controller = DownloadController()
+        
+        coro = self.service.fetch_and_save_profile(username, progress_callback, self.controller)
         self.current_future = self.async_executor.submit(coro)
+        
+        # Show control buttons
+        self._show_control_buttons()
         
         # Poll for completion
         self._check_future_status()
+    
+    def _show_control_buttons(self) -> None:
+        """Show pause/resume/cancel control buttons."""
+        self.pause_button.pack(side=LEFT, padx=2)
+        self.cancel_button.pack(side=LEFT, padx=2)
+    
+    def _hide_control_buttons(self) -> None:
+        """Hide all control buttons."""
+        self.pause_button.pack_forget()
+        self.resume_button.pack_forget()
+        self.cancel_button.pack_forget()
+    
+    def _on_pause_clicked(self) -> None:
+        """Handle pause button click."""
+        if self.controller and self.controller.is_running():
+            self.controller.pause()
+            self._set_status("\u23f8 Download paused", bootstyle=WARNING)
+            self._log("⏸️  Download paused by user")
+            
+            # Swap pause button with resume button
+            self.pause_button.pack_forget()
+            self.resume_button.pack(side=LEFT, padx=2)
+    
+    def _on_resume_clicked(self) -> None:
+        """Handle resume button click."""
+        if self.controller and self.controller.is_paused():
+            self.controller.resume()
+            self._set_status("\u25b6\ufe0f Download resumed", bootstyle=INFO)
+            self._log("▶️  Download resumed")
+            
+            # Swap resume button with pause button
+            self.resume_button.pack_forget()
+            self.pause_button.pack(side=LEFT, padx=2)
+    
+    def _on_cancel_clicked(self) -> None:
+        """Handle cancel button click."""
+        if self.controller:
+            self.controller.cancel()
+            self._set_status("\u274c Download cancelled", bootstyle=DANGER)
+            self._log("❌ Download cancelled byuser")
+            
+            # Hide control buttons
+            self._hide_control_buttons()
     
     def _check_future_status(self) -> None:
         """Check if the async task has completed."""
@@ -453,6 +547,9 @@ class MainWindow(ttkb.Window):
         self.fetch_button.config(state=tk.NORMAL)
         self.username_entry.config(state=tk.NORMAL)
         self.current_future = None
+        
+        # Hide control buttons
+        self._hide_control_buttons()
         
         if summary.success:
             # Update statistics
