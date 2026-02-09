@@ -33,6 +33,7 @@ class FetchSummary:
     existing_posts: int
     media_downloaded: int
     media_failed: int
+    skipped_posts: int = 0  # Posts skipped (already downloaded)
     errors: list[str]
     success: bool
     download_path: str = ""
@@ -359,9 +360,10 @@ class MediaSnapService:
             return FetchSummary(
                 username=result["channel_name"],
                 profile_id="",
-                total_posts_found=result["downloaded"] + result["failed"],
+                total_posts_found=result["downloaded"] + result.get("skipped", 0) + result["failed"],
                 new_posts=result["downloaded"],
                 existing_posts=0,
+                skipped_posts=result.get("skipped", 0),
                 media_downloaded=result["downloaded"],
                 media_failed=result["failed"],
                 errors=result.get("failed_videos", []),

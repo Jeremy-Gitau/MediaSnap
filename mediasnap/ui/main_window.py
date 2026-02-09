@@ -472,11 +472,16 @@ class MainWindow(ttkb.Window):
                     )
                     self._set_status(status, bootstyle=SUCCESS)
                     self._log(f"✅ Success! {summary.media_downloaded} videos downloaded")
+                    if summary.skipped_posts > 0:
+                        self._log(f"   ⏭️  {summary.skipped_posts} videos skipped (already exist)")
                     self._log(f"   📁 Saved to: {summary.download_path}")
                 else:
                     status = "✅ YouTube download complete"
                     self._set_status(status, bootstyle=SUCCESS)
-                    self._log("✅ No new videos to download")
+                    if summary.skipped_posts > 0:
+                        self._log(f"✅ All {summary.skipped_posts} videos already downloaded")
+                    else:
+                        self._log("✅ No new videos to download")
             elif summary.platform == "linkedin":
                 if summary.new_posts > 0:
                     status = (

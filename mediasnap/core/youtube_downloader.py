@@ -3,6 +3,7 @@
 import asyncio
 import re
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -23,6 +24,32 @@ def _check_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+def _install_aria2c() -> bool:
+    """Auto-install aria2c via Homebrew on macOS."""
+    try:
+        logger.info("📦 aria2c not found. Installing via Homebrew...")
+        subprocess.run(
+            ["brew", "install", "aria2"],
+            check=True,
+            capture_output=True,
+            timeout=300,
+        )
+        logger.info("✅ aria2c installed successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install aria2c: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("aria2c installation timed out")
+        return False
+    except FileNotFoundError:
+        logger.warning("Homebrew not found. Install manually: brew install aria2")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to install aria2c: {e}")
+        return False
+
+
 class YouTubeDownloader:
     """
     YouTube channel video downloader using yt-dlp.
@@ -32,6 +59,7 @@ class YouTubeDownloader:
         """Initialize YouTube downloader."""
         self.downloaded_count = 0
         self.failed_count = 0
+        self.skipped_count = 0
         self.failed_videos = []
     
     def _is_youtube_url(self, url: str) -> bool:
@@ -87,6 +115,16 @@ class YouTubeDownloader:
         # Check if aria2c is available for faster downloads
         has_aria2c = shutil.which("aria2c") is not None
         
+        # Auto-install aria2c if not available
+        if not has_aria2c:
+            logger.info("💡 Installing aria2c for faster downloads...")
+            if progress_callback:
+                progress_callback("Setup", 5, 100, "Installing aria2c...")
+            has_aria2c = _install_aria2c()
+        
+        # Create download archive file to track downloads and avoid duplicates
+        archive_file = download_path / ".youtube_archive.txt"
+        
         # Configure yt-dlp options
         if has_ffmpeg:
             # Best quality with merging (requires ffmpeg)
@@ -110,6 +148,9 @@ class YouTubeDownloader:
             'writesubtitles': False,
             'writethumbnail': False,
             'merge_output_format': 'mp4',
+            # Duplicate detection
+            'download_archive': str(archive_file),  # Track downloaded videos
+            'nooverwrites': True,  # Don't overwrite existing files
             # Performance optimizations
             'concurrent_fragment_downloads': 5,  # Download 5 fragments at once
             'retries': 3,  # Limit retries
@@ -135,6 +176,7 @@ class YouTubeDownloader:
             
             logger.info(
                 f"YouTube download complete: {self.downloaded_count} downloaded, "
+                f"{self.skipped_count} skipped (already exists), "
                 f"{self.failed_count} failed"
             )
             
@@ -142,6 +184,7 @@ class YouTubeDownloader:
                 "success": True,
                 "channel_name": channel_name,
                 "downloaded": self.downloaded_count,
+                "skipped": self.skipped_count,
                 "failed": self.failed_count,
                 "failed_videos": self.failed_videos,
                 "download_path": str(download_path),
@@ -236,8 +279,32 @@ class YouTubeDownloader:
             url: YouTube URL
             options: yt-dlp options dictionary
         """
+        # Custom logger to track skipped videos
+        class SkipLogger:
+            def __init__(self, parent):
+                self.parent = parent
+            
+            def debug(self, msg):
+                # Detect when video is skipped (already downloaded)
+                if 'has already been recorded in archive' in msg or 'Skipping' in msg:
+                    self.parent.skipped_count += 1
+                    logger.debug(f"⏭️  Skipped (already downloaded): {msg.split(':')[0]}")
+            
+            def info(self, msg):
+                logger.info(msg)
+            
+            def warning(self, msg):
+                logger.warning(msg)
+            
+            def error(self, msg):
+                logger.error(msg)
+        
+        # Add custom logger to options
+        options_with_logger = options.copy()
+        options_with_logger['logger'] = SkipLogger(self)
+        
         try:
-            with yt_dlp.YoutubeDL(options) as ydl:
+            with yt_dlp.YoutubeDL(options_with_logger) as ydl:
                 ydl.download([url])
         except Exception as e:
             logger.error(f"yt-dlp error: {e}")
