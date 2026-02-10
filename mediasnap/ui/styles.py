@@ -1,7 +1,7 @@
 """UI styling configuration."""
 
 # ttkbootstrap theme
-THEME = "darkly"  # Options: darkly, cosmo, flatly, litera, minty, etc.
+THEME = "cosmo"  # Options: darkly, cosmo, flatly, litera, minty, etc.
 
 # Window dimensions
 WINDOW_WIDTH = 800

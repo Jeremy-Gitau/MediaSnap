@@ -202,6 +202,134 @@ class InstagramLoginDialog(LoginDialog):
         super().__init__(parent, "Instagram Login", "instagram")
 
 
+class TwoFactorDialog(ttkb.Toplevel):
+    """Dialog for entering two-factor authentication code."""
+    
+    def __init__(self, parent):
+        """Initialize 2FA dialog."""
+        super().__init__(parent)
+        
+        self.title("Two-Factor Authentication")
+        self.result = None
+        
+        # Make it modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Center on screen
+        self.geometry("400x300")
+        self.resizable(False, False)
+        
+        # Build UI
+        self._build_ui()
+        
+        # Focus on entry
+        self.code_entry.focus()
+    
+    def _build_ui(self):
+        """Build the 2FA dialog UI."""
+        main_frame = ttk.Frame(self, padding=30)
+        main_frame.pack(fill=BOTH, expand=YES)
+        
+        # Header with icon
+        icon_label = ttk.Label(
+            main_frame,
+            text="🔐",
+            font=("Helvetica", 48)
+        )
+        icon_label.pack()
+        
+        title_label = ttk.Label(
+            main_frame,
+            text="Two-Factor Authentication",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        )
+        title_label.pack(pady=(10, 5))
+        
+        subtitle_label = ttk.Label(
+            main_frame,
+            text="Enter the 6-digit code from your authenticator app",
+            font=("Helvetica", 10),
+            bootstyle="secondary",
+            wraplength=300,
+            justify=CENTER
+        )
+        subtitle_label.pack(pady=(0, 20))
+        
+        # Code entry
+        ttk.Label(
+            main_frame,
+            text="Authentication Code",
+            font=("Helvetica", 11, "bold")
+        ).pack(anchor=W, pady=(0, 5))
+        
+        self.code_entry = ttk.Entry(
+            main_frame,
+            font=("Helvetica", 14),
+            bootstyle="primary",
+            justify=CENTER
+        )
+        self.code_entry.pack(fill=X, ipady=8)
+        self.code_entry.bind("<Return>", lambda e: self._on_verify())
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=X, pady=(20, 0))
+        
+        cancel_btn = ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            bootstyle="secondary-outline",
+            width=15
+        )
+        cancel_btn.pack(side=RIGHT, padx=(10, 0))
+        
+        verify_btn = ttk.Button(
+            button_frame,
+            text="🔐 Verify",
+            command=self._on_verify,
+            bootstyle="success",
+            width=15
+        )
+        verify_btn.pack(side=RIGHT)
+        
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=("Helvetica", 10),
+            bootstyle="danger"
+        )
+        self.status_label.pack(pady=(10, 0))
+    
+    def _on_verify(self):
+        """Handle verify button click."""
+        code = self.code_entry.get().strip()
+        
+        if not code:
+            self.status_label.config(text="❌ Please enter the 6-digit code")
+            return
+        
+        if len(code) != 6 or not code.isdigit():
+            self.status_label.config(text="❌ Code must be 6 digits")
+            return
+        
+        self.result = code
+        self.destroy()
+    
+    def _on_cancel(self):
+        """Handle cancel button click."""
+        self.result = None
+        self.destroy()
+    
+    def get_code(self) -> Optional[str]:
+        """Get the entered 2FA code."""
+        self.wait_window()
+        return self.result
+
+
 class LinkedInLoginDialog(LoginDialog):
     """LinkedIn-specific login dialog."""
     
@@ -245,3 +373,17 @@ def show_login_prompt(parent, platform: str) -> Optional[Tuple[str, str]]:
         raise ValueError(f"Unknown platform: {platform}")
     
     return dialog.get_credentials()
+
+
+def show_2fa_prompt(parent) -> Optional[str]:
+    """
+    Show two-factor authentication dialog.
+    
+    Args:
+        parent: Parent window
+    
+    Returns:
+        6-digit 2FA code or None if cancelled
+    """
+    dialog = TwoFactorDialog(parent)
+    return dialog.get_code()

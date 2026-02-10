@@ -13,9 +13,7 @@ from mediasnap import __version__
 from mediasnap.core.app_service import MediaSnapService, FetchSummary
 from mediasnap.core.download_controller import DownloadController, DownloadState
 from mediasnap.core.auth_helpers import (
-    authenticate_instagram,
     authenticate_linkedin,
-    check_instagram_auth,
     check_linkedin_auth,
 )
 from mediasnap.storage.database import close_db, init_db
@@ -84,76 +82,6 @@ class MainWindow(ttkb.Window):
         logger.info(f"Sessions: {SESSION_DIR}")
         logger.info("="*60)
     
-    def _create_stat_card(self, parent, icon: str, label: str, value: str, style: str) -> ttk.Frame:
-        """
-        Create a statistics card widget (legacy method for compatibility).
-        
-        Args:
-            parent: Parent widget
-            icon: Emoji icon
-            label: Card label
-            value: Initial value
-            style: Bootstrap style
-        
-        Returns:
-            Frame containing the stat card
-        """
-        return self._create_modern_stat_card(parent, icon, label, value, style, "#666666")
-    
-    def _create_modern_stat_card(
-        self, parent, icon: str, label: str, value: str, style: str, color: str
-    ) -> ttk.Frame:
-        """
-        Create a modern statistics card with gradient effects.
-        
-        Args:
-            parent: Parent widget
-            icon: Emoji icon
-            label: Card label
-            value: Initial value
-            style: Bootstrap style
-            color: Hex color for accent
-        
-        Returns:
-            Frame containing the modern stat card
-        """
-        # Card container with shadow effect (simulated with border)
-        card = ttk.LabelFrame(parent, bootstyle=style, padding=8)
-        
-        # Icon with compact size
-        icon_label = ttk.Label(
-            card,
-            text=icon,
-            font=("Apple Color Emoji", 24) if self._is_macos() else ("Segoe UI Emoji", 24),
-        )
-        icon_label.pack(pady=(3, 5))
-        
-        # Value (compact animated number)
-        value_label = ttk.Label(
-            card,
-            text=value,
-            font=("SF Pro Display", 20, "bold") if self._is_macos() else ("Segoe UI", 20, "bold"),
-            bootstyle=style,
-        )
-        value_label.pack()
-        
-        # Label (description with compact spacing)
-        desc_label = ttk.Label(
-            card,
-            text=label,
-            font=("SF Pro Text", 9) if self._is_macos() else ("Segoe UI", 9),
-            bootstyle=SECONDARY,
-            justify=CENTER,
-        )
-        desc_label.pack(pady=(3, 3))
-        
-        # Store label references for updating
-        card.value_label = value_label
-        card.desc_label = desc_label
-        card.icon_label = icon_label
-        
-        return card
-    
     def _is_macos(self) -> bool:
         """Check if running on macOS."""
         import platform
@@ -170,6 +98,8 @@ class MainWindow(ttkb.Window):
             "instagram": "danger",
             "youtube": "danger",
             "linkedin": "info",
+            "facebook": "primary",
+            "pinterest": "danger",
         }
         
         for p, btn in self.platform_buttons.items():
@@ -194,6 +124,8 @@ class MainWindow(ttkb.Window):
             "instagram": "e.g., instagram.com/username or @username",
             "youtube": "e.g., youtube.com/@channelname",
             "linkedin": "e.g., linkedin.com/in/username",
+            "facebook": "e.g., facebook.com/username",
+            "pinterest": "e.g., pinterest.com/username",
         }
         
         if not self.username_entry.get() or "Paste" in self.username_entry.get():
@@ -216,6 +148,10 @@ class MainWindow(ttkb.Window):
             self.validation_label.config(text="✓ YouTube URL detected", bootstyle="info")
         elif "linkedin.com" in text:
             self.validation_label.config(text="✓ LinkedIn URL detected", bootstyle="warning")
+        elif "facebook.com" in text or "fb.com" in text:
+            self.validation_label.config(text="✓ Facebook URL detected", bootstyle="primary")
+        elif "pinterest.com" in text or "pin.it" in text:
+            self.validation_label.config(text="✓ Pinterest URL detected", bootstyle="danger")
         else:
             self.validation_label.config(text="⚠ Enter a valid URL", bootstyle="secondary")
     
@@ -223,7 +159,7 @@ class MainWindow(ttkb.Window):
         """Handle entry focus in (clear placeholder)."""
         if self.username_entry.cget("foreground") == "gray":
             self.username_entry.delete(0, tk.END)
-            self.username_entry.config(foreground="")
+            self.username_entry.config(foreground="white" if THEME == "darkly" else "black")
     
     def _on_entry_focus_out(self, event) -> None:
         """Handle entry focus out (restore placeholder if empty)."""
@@ -234,29 +170,16 @@ class MainWindow(ttkb.Window):
                 "instagram": "e.g., instagram.com/username or @username",
                 "youtube": "e.g., youtube.com/@channelname",
                 "linkedin": "e.g., linkedin.com/in/username",
+                "facebook": "e.g., facebook.com/username",
+                "pinterest": "e.g., pinterest.com/username",
             }
             self.username_entry.insert(0, placeholders.get(platform, placeholders["auto"]))
             self.username_entry.config(foreground="gray")
     
-    def _clear_log(self) -> None:
-        """Clear the activity log."""
-        self.log_text.config(state=tk.NORMAL)
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.config(state=tk.DISABLED)
-        self._log("📝 Log cleared", tag="info")
-    
-    def _rotate_tips(self) -> None:
-        """Rotate footer tips every 5 seconds."""
-        if hasattr(self, 'tip_label') and hasattr(self, 'tips'):
-            self.current_tip = (self.current_tip + 1) % len(self.tips)
-            self.tip_label.config(text=self.tips[self.current_tip])
-            self.after(5000, self._rotate_tips)
-    
     def _update_stats(self) -> None:
         """Update statistics display."""
-        self.stats_cards[0].value_label.config(text=str(self.total_profiles))
-        self.stats_cards[1].value_label.config(text=str(self.total_posts))
-        self.stats_cards[2].value_label.config(text=str(self.total_downloads))
+        # Stats removed for compact UI
+        pass
     
     def _build_ui(self) -> None:
         """Build the modern, interactive user interface."""
@@ -265,66 +188,24 @@ class MainWindow(ttkb.Window):
         main_frame.pack(fill=BOTH, expand=YES)
         
         # ═══════════════════════════════════════════════════════
-        # HERO HEADER SECTION 🎨
+        # COMPACT HEADER 🎨
         # ═══════════════════════════════════════════════════════
-        header_container = ttk.Frame(main_frame, bootstyle="primary")
-        header_container.pack(fill=X, pady=(0, PAD_LARGE))
+        header_container = ttk.Frame(main_frame)
+        header_container.pack(fill=X, pady=(0, PAD_SMALL))
         
-        header_frame = ttk.Frame(header_container, padding=20)
-        header_frame.pack(fill=X)
-        
-        # Animated title
+        # Small title in top left
         header_label = ttk.Label(
-            header_frame,
+            header_container,
             text="📸 MediaSnap",
-            font=("SF Pro Display", 42, "bold") if self._is_macos() else ("Segoe UI", 42, "bold"),
+            font=("SF Pro Display", 18, "bold") if self._is_macos() else ("Segoe UI", 18, "bold"),
             bootstyle=PRIMARY,
         )
-        header_label.pack()
-        
-        # Animated subtitle with gradient effect simulation
-        subtitle_label = ttk.Label(
-            header_frame,
-            text="Archive Instagram • YouTube • LinkedIn with Style",
-            font=("SF Pro Text", 14) if self._is_macos() else ("Segoe UI", 14),
-            bootstyle=SECONDARY,
-        )
-        subtitle_label.pack(pady=(5, 0))
-        
-        # Version badge
-        version_label = ttk.Label(
-            header_frame,
-            text=f"v{__version__}",
-            font=("Courier", 10),
-            bootstyle="info",
-        )
-        version_label.pack(pady=(5, 0))
-        
-        # ═══════════════════════════════════════════════════════
-        # STATS DASHBOARD WITH ANIMATIONS 📊
-        # ═══════════════════════════════════════════════════════
-        stats_container = ttk.Frame(main_frame)
-        stats_container.pack(fill=X, pady=(0, PAD_LARGE))
-        
-        self.stats_cards = []
-        stats_data = [
-            ("🎯", "Profiles\nArchived", "0", "success", "#10b981"),
-            ("📦", "Total\nPosts", "0", "info", "#3b82f6"),
-            ("💾", "Files\nDownloaded", "0", "warning", "#f59e0b"),
-            ("⚡", "Download\nSpeed", "0 MB/s", "danger", "#ef4444"),
-        ]
-        
-        for icon, label, value, style, color in stats_data:
-            card = self._create_modern_stat_card(
-                stats_container, icon, label, value, style, color
-            )
-            card.pack(side=LEFT, fill=BOTH, expand=YES, padx=7)
-            self.stats_cards.append(card)
+        header_label.pack(side=LEFT)
         
         # ═══════════════════════════════════════════════════════
         # INPUT SECTION WITH SMART VALIDATION 🔗
         # ═══════════════════════════════════════════════════════
-        input_container = ttk.Frame(main_frame, bootstyle="secondary", padding=20)
+        input_container = ttk.Frame(main_frame, padding=20)
         input_container.pack(fill=X, pady=PAD_MEDIUM)
         
         # Platform selector with icons
@@ -350,6 +231,8 @@ class MainWindow(ttkb.Window):
             ("instagram", "📸 Instagram", "danger"),
             ("youtube", "▶️ YouTube", "danger"),
             ("linkedin", "💼 LinkedIn", "info"),
+            ("facebook", "📘 Facebook", "primary"),
+            ("pinterest", "📌 Pinterest", "danger"),
         ]
         
         for platform, text, style in platforms:
@@ -389,7 +272,7 @@ class MainWindow(ttkb.Window):
         self.username_entry.pack(fill=X)
         self.username_entry.bind("<Return>", lambda e: self._on_fetch_clicked())
         self.username_entry.bind("<KeyRelease>", self._on_entry_change)
-        self.username_entry.insert(0, "Paste URL or @username here...")
+        self.username_entry.insert(0, "")
         self.username_entry.bind("<FocusIn>", self._on_entry_focus_in)
         self.username_entry.bind("<FocusOut>", self._on_entry_focus_out)
         self.username_entry.config(foreground="gray")
@@ -405,7 +288,7 @@ class MainWindow(ttkb.Window):
         
         # Action buttons with animations
         button_row = ttk.Frame(input_row)
-        button_row.pack(side=LEFT)
+        button_row.pack(side=LEFT, anchor=N)
         
         # Main fetch button with gradient effect
         self.fetch_button = ttk.Button(
@@ -446,115 +329,52 @@ class MainWindow(ttkb.Window):
         self._hide_control_buttons()
         
         # ═══════════════════════════════════════════════════════
-        # PROGRESS VISUALIZATION WITH LIVE UPDATES 📊
+        # PROGRESS VISUALIZATION 📊
         # ═══════════════════════════════════════════════════════
-        progress_container = ttk.Frame(main_frame, bootstyle="info", padding=20)
+        progress_container = ttk.LabelFrame(
+            main_frame,
+            text="📊 Download Progress",
+            padding=PAD_MEDIUM,
+            bootstyle="info",
+        )
         progress_container.pack(fill=X, pady=PAD_LARGE)
         
-        ttk.Label(
-            progress_container,
-            text="📊 Download Progress",
-            font=("Helvetica", 13, "bold"),
-            bootstyle="info",
-        ).pack(anchor=W, pady=(0, PAD_MEDIUM))
-        
-        # Modern progress bar with percentage overlay
-        progress_frame = ttk.Frame(progress_container)
-        progress_frame.pack(fill=X, pady=(0, PAD_SMALL))
-        
+        # Progress bar with striped animated style
         self.progress_bar = ttk.Progressbar(
-            progress_frame,
+            progress_container,
             mode="determinate",
-            bootstyle="info",
+            bootstyle="success-striped",
             maximum=100,
         )
-        self.progress_bar.pack(fill=X)
+        self.progress_bar.pack(fill=X, pady=(0, PAD_SMALL))
         
-        # Progress percentage label
-        self.progress_percentage = ttk.Label(
-            progress_container,
-            text="0%",
-            font=("Helvetica", 11, "bold"),
-            bootstyle="success",
-        )
-        self.progress_percentage.pack(anchor=E, pady=(2, 8))
-        
-        # Status with animated icons
+        # Status with icon
         self.status_label = ttk.Label(
             progress_container,
-            text="🎬 Ready to download - Select a platform and enter a URL!",
-            font=("Helvetica", 12),
+            text="🎬 Ready to fetch profiles - Enter a username to begin!",
+            font=("Helvetica", 11),
             bootstyle=SECONDARY,
-            wraplength=700,
         )
         self.status_label.pack(anchor=W)
         
-        # Quick stats row during download
-        quick_stats_frame = ttk.Frame(progress_container)
-        quick_stats_frame.pack(fill=X, pady=(10, 0))
-        
-        self.quick_stat_labels = []
-        quick_stats = [
-            ("⏱️", "Elapsed:", "0:00"),
-            ("📥", "Downloaded:", "0 items"),
-            ("⏭️", "Remaining:", "0 items"),
-        ]
-        
-        for icon, label, value in quick_stats:
-            stat_frame = ttk.Frame(quick_stats_frame)
-            stat_frame.pack(side=LEFT, expand=YES, fill=X, padx=5)
-            
-            ttk.Label(
-                stat_frame,
-                text=f"{icon} {label}",
-                font=("Helvetica", 9),
-                bootstyle=SECONDARY,
-            ).pack(side=LEFT)
-            
-            value_label = ttk.Label(
-                stat_frame,
-                text=value,
-                font=("Helvetica", 9, "bold"),
-                bootstyle=PRIMARY,
-            )
-            value_label.pack(side=LEFT, padx=(5, 0))
-            self.quick_stat_labels.append(value_label)
-        
         # ═══════════════════════════════════════════════════════
-        # ACTIVITY LOG WITH SYNTAX HIGHLIGHTING 📝
+        # ACTIVITY LOG 📝
         # ═══════════════════════════════════════════════════════
-        log_container = ttk.Frame(main_frame, padding=15)
-        log_container.pack(fill=BOTH, expand=YES, pady=PAD_MEDIUM)
-        
-        log_header = ttk.Frame(log_container)
-        log_header.pack(fill=X, pady=(0, PAD_SMALL))
-        
-        ttk.Label(
-            log_header,
+        log_container = ttk.LabelFrame(
+            main_frame,
             text="📝 Activity Log",
-            font=("Helvetica", 13, "bold"),
-            bootstyle=PRIMARY,
-        ).pack(side=LEFT)
-        
-        # Clear log button
-        ttk.Button(
-            log_header,
-            text="🗑️ Clear",
-            command=self._clear_log,
-            bootstyle="secondary-outline",
-            width=10,
-        ).pack(side=RIGHT)
+            padding=PAD_MEDIUM,
+        )
+        log_container.pack(fill=BOTH, expand=YES, pady=PAD_MEDIUM)
         
         self.log_text = scrolledtext.ScrolledText(
             log_container,
-            font=("Monaco", 10) if self._is_macos() else ("Consolas", 10),
-            height=14,
+            font=FONT_LOG,
+            height=12,
             wrap=tk.WORD,
             state=tk.DISABLED,
-            bg="#1a1b26" if THEME == "darkly" else "#f8f9fa",
-            fg="#c0caf5" if THEME == "darkly" else "#24292e",
-            relief=tk.FLAT,
-            borderwidth=2,
+            bg="#1e1e1e" if THEME == "darkly" else "#f8f9fa",
+            fg="#d4d4d4" if THEME == "darkly" else "#212529",
         )
         self.log_text.pack(fill=BOTH, expand=YES)
         
@@ -566,31 +386,17 @@ class MainWindow(ttkb.Window):
         self.log_text.tag_config("header", foreground="#8b5cf6", font=("Helvetica", 11, "bold"))
         
         # ═══════════════════════════════════════════════════════
-        # FOOTER WITH TIPS & TRICKS 💡
+        # FOOTER WITH HELPFUL INFO 💡
         # ═══════════════════════════════════════════════════════
-        footer_frame = ttk.Frame(main_frame, padding=10)
+        footer_frame = ttk.Frame(main_frame)
         footer_frame.pack(fill=X, pady=(PAD_MEDIUM, 0))
         
-        tips = [
-            "💡 Instagram: Login required for private accounts",
-            "▶️ YouTube: aria2c auto-installs for faster downloads",
-            "💼 LinkedIn: Respects rate limits automatically",
-            "📁 Smart folders: reels/, images/, youtube/, linkedin/",
-        ]
-        
-        self.tip_label = ttk.Label(
+        ttk.Label(
             footer_frame,
-            text=tips[0],
+            text="💡 Instagram: reels/, images/, carousel/, tagged/ • YouTube: organized by title",
             font=("Helvetica", 9),
             bootstyle=SECONDARY,
-            anchor=CENTER,
-        )
-        self.tip_label.pack()
-        
-        # Rotate tips every 5 seconds
-        self.current_tip = 0
-        self.tips = tips
-        self._rotate_tips()
+        ).pack()
     
     def _on_fetch_clicked(self) -> None:
         """Handle fetch button click with authentication checks."""
@@ -607,11 +413,24 @@ class MainWindow(ttkb.Window):
         
         # Check if it's a YouTube URL
         if self._is_youtube_url(input_text):
-            self._start_youtube_fetch(input_text)
+            # Determine if single video or channel
+            if self._is_single_youtube_video(input_text):
+                self._log("🎬 Downloading single YouTube video...", tag="info")
+                self._start_youtube_single_fetch(input_text)
+            else:
+                self._log("📺 YouTube channel download starting...", tag="info")
+                self._start_youtube_fetch(input_text)
             return
         
         # Check if it's a LinkedIn URL
         if self._is_linkedin_url(input_text):
+            # Check if it's a single post
+            if self._is_single_linkedin_post(input_text):
+                self._log("💼 Downloading single LinkedIn post...", tag="info")
+                self._log("❌ Single LinkedIn post download not yet implemented", tag="error")
+                self._log("   Full profile download available", tag="info")
+                return
+            
             # Check LinkedIn authentication
             if not check_linkedin_auth():
                 self._log("🔐 LinkedIn login required", tag="warning")
@@ -623,11 +442,11 @@ class MainWindow(ttkb.Window):
                     
                     # Authenticate in background
                     async def auth_and_fetch():
-                        success = await authenticate_linkedin(username, password)
+                        success, error_msg = await authenticate_linkedin(username, password)
                         if success:
-                            self._log("✅ LinkedIn authentication successful!", tag="success")
+                            self.after(0, lambda: self._log("✅ LinkedIn authentication successful!", tag="success"))
                             # Now start the actual fetch
-                            await self.service.download_linkedin_profile(
+                            return await self.service.download_linkedin_profile(
                                 input_text,
                                 lambda stage, current, total, message: self.after(
                                     0, self._update_progress, stage, current, total, message
@@ -635,12 +454,12 @@ class MainWindow(ttkb.Window):
                                 self.controller,
                             )
                         else:
-                            self._log("❌ LinkedIn authentication failed", tag="error")
+                            self.after(0, lambda: self._log(f"❌ LinkedIn authentication failed: {error_msg}", tag="error"))
                             self.is_fetching = False
                             self.fetch_button.config(state=tk.NORMAL)
                             self.username_entry.config(state=tk.NORMAL)
+                            return None
                     
-                    self.controller = DownloadController()
                     self.current_future = self.async_executor.submit(auth_and_fetch())
                     self.is_fetching = True
                     self.fetch_button.config(state=tk.DISABLED)
@@ -654,53 +473,40 @@ class MainWindow(ttkb.Window):
             self._start_linkedin_fetch(input_text)
             return
         
+        # Check if it's a Facebook URL
+        if self._is_facebook_url(input_text):
+            if self._is_single_facebook_post(input_text):
+                self._log("📄 Downloading single Facebook post...", tag="info")
+                self._start_facebook_single_fetch(input_text)
+            else:
+                self._log("📘 Facebook profile download starting...", tag="info")
+                self._start_facebook_fetch(input_text)
+            return
+        
+        # Check if it's a Pinterest URL
+        if self._is_pinterest_url(input_text):
+            if self._is_single_pinterest_pin(input_text):
+                self._log("📍 Downloading single Pinterest pin...", tag="info")
+                self._start_pinterest_single_fetch(input_text)
+            else:
+                self._log("📌 Pinterest board download starting...", tag="info")
+                self._start_pinterest_fetch(input_text)
+            return
+        
+        # Check if it's a single Instagram post
+        if self._is_single_instagram_post(input_text):
+            self._log("📸 Downloading single Instagram post...", tag="info")
+            self._start_instagram_single_fetch(input_text)
+            return
+        
         # Extract username from Instagram URL or clean input
         username = self._extract_username(input_text)
         if not username:
-            self._set_status("❌ Invalid Instagram, YouTube, or LinkedIn URL", bootstyle=WARNING)
+            self._set_status("❌ Invalid URL or username", bootstyle=WARNING)
             self._animate_status_shake()
             return
         
-        # Check Instagram authentication
-        if not check_instagram_auth():
-            self._log("🔐 Instagram login required", tag="warning")
-            credentials = show_login_prompt(self, "instagram")
-            
-            if credentials:
-                username_ig, password = credentials
-                self._log("Authenticating with Instagram...", tag="info")
-                
-                # Authenticate in background
-                async def auth_and_fetch():
-                    success = await authenticate_instagram(username_ig, password)
-                    if success:
-                        self._log("✅ Instagram authentication successful!", tag="success")
-                        # Now start the actual fetch
-                        await self.service.fetch_and_save_profile(
-                            username,
-                            lambda stage, current, total, message: self.after(
-                                0, self._update_progress, stage, current, total, message
-                            ),
-                            self.controller,
-                        )
-                    else:
-                        self._log("❌ Instagram authentication failed", tag="error")
-                        self.is_fetching = False
-                        self.fetch_button.config(state=tk.NORMAL)
-                        self.username_entry.config(state=tk.NORMAL)
-                
-                self.controller = DownloadController()
-                self.current_future = self.async_executor.submit(auth_and_fetch())
-                self.is_fetching = True
-                self.fetch_button.config(state=tk.DISABLED)
-                self.username_entry.config(state=tk.DISABLED)
-                self._show_control_buttons()
-                self._check_future_status()
-            else:
-                self._log("❌ Instagram login cancelled", tag="warning")
-            return
-        
-        # Start Instagram fetch with existing session
+        # Start Instagram fetch (will use existing session if available)
         self._start_fetch(username)
     
     def _animate_status_shake(self) -> None:
@@ -717,7 +523,7 @@ class MainWindow(ttkb.Window):
         animate()
     
     def _is_youtube_url(self, url: str) -> bool:
-        """Check if URL is a YouTube URL."""
+        """Check if URL is a YouTube URL (channel or video)."""
         import re
         patterns = [
             r'(?:https?://)?(?:www\.)?youtube\.com/(?:c/|channel/|@|user/)',
@@ -726,12 +532,77 @@ class MainWindow(ttkb.Window):
         ]
         return any(re.search(pattern, url) for pattern in patterns)
     
-    def _is_linkedin_url(self, url: str) -> bool:
-        """Check if URL is a LinkedIn URL."""
+    def _is_single_youtube_video(self, url: str) -> bool:
+        """Check if URL is a single YouTube video."""
         import re
         patterns = [
-            r'(?:https?://)?(?:www\.)?linkedin\.com/in/',  # Profile
-            r'(?:https?://)?(?:www\.)?linkedin\.com/company/',  # Company
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=',
+            r'(?:https?://)?youtu\.be/',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_single_instagram_post(self, url: str) -> bool:
+        """Check if URL is a single Instagram post."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?instagram\.com/p/[^/]+',
+            r'(?:https?://)?(?:www\.)?instagram\.com/reel/[^/]+',
+            r'(?:https?://)?(?:www\.)?instagram\.com/tv/[^/]+',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_single_facebook_post(self, url: str) -> bool:
+        """Check if URL is a single Facebook post."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?facebook\.com/[^/]+/posts/',
+            r'(?:https?://)?(?:www\.)?facebook\.com/photo/?\?fbid=',
+            r'(?:https?://)?(?:www\.)?facebook\.com/permalink\.php',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_single_linkedin_post(self, url: str) -> bool:
+        """Check if URL is a single LinkedIn post."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?linkedin\.com/posts/',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_single_pinterest_pin(self, url: str) -> bool:
+        """Check if URL is a single Pinterest pin."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?pinterest\.com/pin/\d+',
+            r'(?:https?://)?pin\.it/[^/]+',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_linkedin_url(self, url: str) -> bool:
+        """Check if URL is a LinkedIn URL (profile, company, or post)."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?linkedin\.com/in/',
+            r'(?:https?://)?(?:www\.)?linkedin\.com/company/',
+            r'(?:https?://)?(?:www\.)?linkedin\.com/posts/',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_facebook_url(self, url: str) -> bool:
+        """Check if URL is a Facebook URL (profile or post)."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?facebook\.com/',
+            r'(?:https?://)?(?:www\.)?fb\.com/',
+        ]
+        return any(re.search(pattern, url) for pattern in patterns)
+    
+    def _is_pinterest_url(self, url: str) -> bool:
+        """Check if URL is a Pinterest URL (board or pin)."""
+        import re
+        patterns = [
+            r'(?:https?://)?(?:www\.)?pinterest\.com/',
+            r'(?:https?://)?pin\.it/',
         ]
         return any(re.search(pattern, url) for pattern in patterns)
     
@@ -813,6 +684,157 @@ class MainWindow(ttkb.Window):
         
         # Poll for completion
         self._check_future_status()
+    
+    def _start_facebook_fetch(self, profile_url: str) -> None:
+        """Start fetching Facebook profile in background."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Starting Facebook download...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Facebook Profile  ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {profile_url}", tag="info")
+        self._log("")
+        self._log("⚠️  Facebook scraping is in beta", tag="warning")
+        self._log("   📖 Public profiles and pages only")
+        
+        # Submit async task
+        def progress_callback(stage, current, total, message):
+            # Schedule UI update on main thread
+            self.after(0, self._update_progress, stage, current, total, message)
+        
+        # Create download controller
+        self.controller = DownloadController()
+        
+        coro = self.service.download_facebook_profile(profile_url, progress_callback, self.controller)
+        self.current_future = self.async_executor.submit(coro)
+        
+        # Show control buttons
+        self._show_control_buttons()
+        
+        # Poll for completion
+        self._check_future_status()
+    
+    def _start_pinterest_fetch(self, profile_url: str) -> None:
+        """Start fetching Pinterest profile in background."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Starting Pinterest download...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Pinterest Board   ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {profile_url}", tag="info")
+        self._log("")
+        self._log("⚠️  Pinterest scraping is in beta", tag="warning")
+        self._log("   📌 Public boards and pins only")
+        
+        # Placeholder - Pinterest integration
+        self._log("❌ Pinterest scraping not yet fully implemented", tag="error")
+        self._log("   Coming soon! Stay tuned for updates.", tag="info")
+        self.is_fetching = False
+        self.fetch_button.config(state=tk.NORMAL)
+        self.username_entry.config(state=tk.NORMAL)
+    
+    def _start_youtube_single_fetch(self, video_url: str) -> None:
+        """Start downloading a single YouTube video."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Downloading video...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Single Video      ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {video_url}", tag="info")
+        self._log("")
+        
+        # Submit async task
+        def progress_callback(stage, current, total, message):
+            self.after(0, self._update_progress, stage, current, total, message)
+        
+        self.controller = DownloadController()
+        coro = self.service.download_single_youtube_video(video_url, progress_callback, self.controller)
+        self.current_future = self.async_executor.submit(coro)
+        
+        self._show_control_buttons()
+        self._check_future_status()
+    
+    def _start_instagram_single_fetch(self, post_url: str) -> None:
+        """Start downloading a single Instagram post."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Downloading post...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Single Post       ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {post_url}", tag="info")
+        self._log("")
+        
+        # Submit async task
+        def progress_callback(stage, current, total, message):
+            self.after(0, self._update_progress, stage, current, total, message)
+        
+        self.controller = DownloadController()
+        coro = self.service.download_single_instagram_post(post_url, progress_callback, self.controller)
+        self.current_future = self.async_executor.submit(coro)
+        
+        self._show_control_buttons()
+        self._check_future_status()
+    
+    def _start_facebook_single_fetch(self, post_url: str) -> None:
+        """Start downloading a single Facebook post."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Downloading post...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Single Post       ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {post_url}", tag="info")
+        self._log("")
+        self._log("⚠️  Single post download in beta", tag="warning")
+        
+        # Submit async task
+        def progress_callback(stage, current, total, message):
+            self.after(0, self._update_progress, stage, current, total, message)
+        
+        self.controller = DownloadController()
+        coro = self.service.download_single_facebook_post(post_url, progress_callback, self.controller)
+        self.current_future = self.async_executor.submit(coro)
+        
+        self._show_control_buttons()
+        self._check_future_status()
+    
+    def _start_pinterest_single_fetch(self, pin_url: str) -> None:
+        """Start downloading a single Pinterest pin."""
+        self.is_fetching = True
+        self.fetch_button.config(state=tk.DISABLED)
+        self.username_entry.config(state=tk.DISABLED)
+        
+        self.progress_bar["value"] = 0
+        self._set_status(f"🚀 Downloading pin...", bootstyle=INFO)
+        self._log(f"╔═══════════════════════════════════╗", tag="header")
+        self._log(f"║  Downloading Single Pin         ║", tag="header")
+        self._log(f"╚═══════════════════════════════════╝", tag="header")
+        self._log(f"🔗 URL: {pin_url}", tag="info")
+        self._log("")
+        self._log("❌ Pinterest scraping not yet implemented", tag="error")
+        self._log("   Coming soon!", tag="info")
+        self.is_fetching = False
+        self.fetch_button.config(state=tk.NORMAL)
+        self.username_entry.config(state=tk.NORMAL)
     
     def _start_fetch(self, username: str) -> None:
         """Start fetching Instagram profile in background."""
@@ -901,20 +923,24 @@ class MainWindow(ttkb.Window):
         # Task completed, get result
         try:
             summary: FetchSummary = self.current_future.result()
-            self._on_fetch_complete(summary)
+            
+            # Handle None (authentication failure)
+            if summary is None:
+                self._on_fetch_error("Authentication failed")
+            else:
+                self._on_fetch_complete(summary)
+                
         except Exception as e:
             logger.exception("Error in fetch task")
             self._on_fetch_error(str(e))
     
     def _update_progress(self, stage: str, current: int, total: int, message: str) -> None:
-        """Update progress bar, percentage, and status (called from main thread)."""
+        """Update progress bar and status (called from main thread)."""
         if total > 0:
             progress = int((current / total) * 100)
             self.progress_bar["value"] = progress
-            self.progress_percentage.config(text=f"{progress}%")
         else:
             self.progress_bar["value"] = current
-            self.progress_percentage.config(text=f"{current}%")
         
         status_text = f"{stage}: {message}" if message else stage
         self._set_status(status_text, bootstyle=INFO)

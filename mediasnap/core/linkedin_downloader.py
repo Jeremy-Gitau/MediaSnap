@@ -72,23 +72,38 @@ class LinkedInDownloader:
 
     async def _authenticate(self) -> bool:
         """
-        Authenticate with LinkedIn using saved session or credentials.
+        Authenticate with LinkedIn using encrypted saved session.
 
         Returns:
             True if authentication successful
         """
         try:
             from linkedin_api import Linkedin
+            import pickle
 
-            # Check for session file in centralized location
-            session_file = SESSION_DIR / "linkedin_session.pkl"
+            # Check for encrypted session file
+            session_file = SESSION_DIR / "linkedin_session.enc"
+            old_session = SESSION_DIR / "linkedin_session.pkl"
 
             if session_file.exists():
-                logger.info(f"Loading LinkedIn session from {session_file}")
-                # Load pickled session
-                import pickle
-
+                logger.info(f"Loading encrypted LinkedIn session from {session_file}")
+                # Load and decrypt session
+                from mediasnap.core.auth_helpers import _decrypt_data
+                
                 with open(session_file, "rb") as f:
+                    encrypted_data = f.read()
+                
+                decrypted_data = _decrypt_data(encrypted_data)
+                session_data = pickle.loads(decrypted_data)
+                
+                self.linkedin_api = Linkedin(
+                    session_data["username"], session_data["password"]
+                )
+                return True
+            elif old_session.exists():
+                # Backward compatibility with old unencrypted format
+                logger.warning(f"Loading legacy unencrypted session from {old_session}")
+                with open(old_session, "rb") as f:
                     session_data = pickle.load(f)
                     self.linkedin_api = Linkedin(
                         session_data["username"], session_data["password"]

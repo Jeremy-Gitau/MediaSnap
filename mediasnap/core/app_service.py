@@ -1,5 +1,6 @@
 """Application service layer orchestrating the fetch and save workflow."""
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -16,6 +17,7 @@ from mediasnap.core.exceptions import (
 from mediasnap.core.scraper import InstagramScraper
 from mediasnap.core.youtube_downloader import YouTubeDownloader
 from mediasnap.core.linkedin_downloader import LinkedInDownloader
+from mediasnap.core.facebook_scraper import FacebookScraper
 from mediasnap.models.data_models import PostData, ProfileData
 from mediasnap.storage.database import get_async_session
 from mediasnap.storage.repository import (
@@ -60,6 +62,7 @@ class MediaSnapService:
     def __init__(self):
         """Initialize service."""
         self.scraper = InstagramScraper()
+        self.facebook_scraper = FacebookScraper()
     
     async def _save_download_history(
         self,
@@ -591,3 +594,338 @@ class MediaSnapService:
                 platform="linkedin",
             )
             controller.fail()
+    
+    async def download_facebook_profile(
+        self,
+        profile_url: str,
+        progress_callback: Callable[[str, int, int, str], None],
+        controller: Optional[DownloadController] = None,
+    ) -> FetchSummary:
+        """
+        Download Facebook profile posts and media.
+        
+        Args:
+            profile_url: Facebook profile URL or username
+            progress_callback: Callback for progress updates
+            controller: Optional download controller for pause/cancel
+        
+        Returns:
+            FetchSummary with download results
+        """
+        started_at = datetime.utcnow()
+        
+        try:
+            # Fetch profile data
+            progress_callback("Fetching", 0, 100, "Fetching Facebook profile...")
+            profile = await self.facebook_scraper.fetch_profile(profile_url, max_posts=50)
+            
+            # Progress: fetched profile
+            progress_callback("Processing", 20, 100, f"Found {len(profile.posts)} posts")
+            
+            # Create download directory
+            username = profile.username
+            download_path = DOWNLOAD_DIR / "facebook" / username
+            download_path.mkdir(parents=True, exist_ok=True)
+            
+            # Download media from posts
+            media_downloaded = 0
+            media_failed = 0
+            
+            total_posts = len(profile.posts)
+            
+            for idx, post in enumerate(profile.posts):
+                # Check for cancellation
+                if controller and controller.is_cancelled():
+                    logger.info("Download cancelled by user")
+                    break
+                
+                # Check for pause
+                while controller and controller.is_paused():
+                    await asyncio.sleep(0.5)
+                
+                # Create folder structure
+                post_type = "videos" if post.is_video else "photos"
+                post_folder = download_path / post_type
+                post_folder.mkdir(exist_ok=True)
+                
+                # Download media
+                for media in post.media_items:
+                    try:
+                        # Download logic here
+                        filename = f"{post.shortcode}_{media.order}.{'mp4' if media.media_type == 'video' else 'jpg'}"
+                        file_path = post_folder / filename
+                        
+                        if not file_path.exists():
+                            # Use downloader to fetch media
+                            downloader = MediaDownloader()
+                            await downloader.download_media(media.url, str(file_path))
+                            media_downloaded += 1
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to download media: {e}")
+                        media_failed += 1
+                
+                # Update progress
+                progress = int(((idx + 1) / total_posts) * 80) + 20
+                progress_callback(
+                    "Downloading",
+                    progress,
+                    100,
+                    f"Downloaded {media_downloaded} items from {idx + 1}/{total_posts} posts"
+                )
+            
+            # Create summary
+            summary = FetchSummary(
+                username=username,
+                profile_id=profile.instagram_id,
+                total_posts_found=total_posts,
+                new_posts=total_posts,
+                existing_posts=0,
+                media_downloaded=media_downloaded,
+                media_failed=media_failed,
+                success=True,
+                download_path=str(download_path),
+                platform="facebook",
+            )
+            
+            # Save history
+            await self._save_download_history(profile_url, summary, started_at)
+            
+            progress_callback("Complete", 100, 100, f"✓ Downloaded {media_downloaded} items!")
+            
+            controller.complete()
+            return summary
+            
+        except asyncio.CancelledError:
+            logger.info("Facebook download cancelled")
+            summary = FetchSummary(
+                username=profile_url,
+                profile_id="unknown",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                success=False,
+                errors=["Download cancelled by user"],
+                platform="facebook",
+            )
+            controller.cancel()
+            await self._save_download_history(profile_url, summary, started_at)
+            return summary
+        except Exception as e:
+            logger.exception(f"Facebook download failed: {e}")
+            summary = FetchSummary(
+                username=profile_url,
+                profile_id="unknown",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=0,
+                success=False,
+                errors=[str(e)],
+                platform="facebook",
+            )
+            controller.fail()
+            await self._save_download_history(profile_url, summary, started_at)
+            return summary
+    
+    async def download_single_instagram_post(
+        self,
+        post_url: str,
+        progress_callback: Callable[[str, int, int, str], None],
+        controller: Optional[DownloadController] = None,
+    ) -> FetchSummary:
+        """
+        Download a single Instagram post.
+        
+        Args:
+            post_url: Instagram post URL (e.g., instagram.com/p/ABC123)
+            progress_callback: Callback for progress updates
+            controller: Optional download controller for pause/cancel
+        
+        Returns:
+            FetchSummary with download results
+        """
+        started_at = datetime.utcnow()
+        
+        try:
+            # Extract shortcode from URL
+            import re
+            match = re.search(r'/(p|reel|tv)/([^/]+)', post_url)
+            if not match:
+                raise Exception("Invalid Instagram post URL")
+            
+            shortcode = match.group(2)
+            
+            progress_callback("Fetching", 10, 100, f"Fetching post {shortcode}...")
+            
+            # Use instaloader to download single post
+            from instaloader import Instaloader, Post
+            from mediasnap.core.scraper import _find_session_file
+            
+            loader = Instaloader(download_videos=True, download_video_thumbnails=False,
+                               download_geotags=False, download_comments=False,
+                               save_metadata=False)
+            
+            # Load session if exists
+            session_file = _find_session_file()
+            if session_file:
+                username = Path(session_file).stem.replace("_session", "")
+                loader.load_session_from_file(username, session_file)
+            
+            progress_callback("Downloading", 30, 100, "Downloading media...")
+            
+            # Download the post
+            post = Post.from_shortcode(loader.context, shortcode)
+            download_path = DOWNLOAD_DIR / "instagram" / "single_posts"
+            download_path.mkdir(parents=True, exist_ok=True)
+            
+            loader.download_post(post, target=str(download_path / shortcode))
+            
+            progress_callback("Complete", 100, 100, "✓ Download complete!")
+            
+            summary = FetchSummary(
+                username=shortcode,
+                profile_id=shortcode,
+                total_posts_found=1,
+                new_posts=1,
+                existing_posts=0,
+                media_downloaded=1,
+                media_failed=0,
+                success=True,
+                download_path=str(download_path),
+                platform="instagram",
+            )
+            
+            controller.complete()
+            await self._save_download_history(post_url, summary, started_at)
+            return summary
+            
+        except Exception as e:
+            logger.exception(f"Failed to download Instagram post: {e}")
+            summary = FetchSummary(
+                username=post_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=1,
+                errors=[str(e)],
+                success=False,
+                platform="instagram",
+            )
+            controller.fail()
+            await self._save_download_history(post_url, summary, started_at)
+            return summary
+    
+    async def download_single_youtube_video(
+        self,
+        video_url: str,
+        progress_callback: Callable[[str, int, int, str], None],
+        controller: Optional[DownloadController] = None,
+    ) -> FetchSummary:
+        """
+        Download a single YouTube video.
+        
+        Args:
+            video_url: YouTube video URL
+            progress_callback: Callback for progress updates
+            controller: Optional download controller for pause/cancel
+        
+        Returns:
+            FetchSummary with download results
+        """
+        started_at = datetime.utcnow()
+        
+        try:
+            progress_callback("Fetching", 10, 100, "Fetching video info...")
+            
+            # Use yt-dlp to download single video
+            result = await self.youtube_downloader.download_video(video_url, progress_callback)
+            
+            progress_callback("Complete", 100, 100, "✓ Download complete!")
+            
+            summary = FetchSummary(
+                username=result.get("title", "video"),
+                profile_id=result.get("id", ""),
+                total_posts_found=1,
+                new_posts=1,
+                existing_posts=0,
+                media_downloaded=1 if result.get("success") else 0,
+                media_failed=0 if result.get("success") else 1,
+                success=result.get("success", False),
+                download_path=result.get("download_path", ""),
+                platform="youtube",
+            )
+            
+            controller.complete()
+            await self._save_download_history(video_url, summary, started_at)
+            return summary
+            
+        except Exception as e:
+            logger.exception(f"Failed to download YouTube video: {e}")
+            summary = FetchSummary(
+                username=video_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=1,
+                errors=[str(e)],
+                success=False,
+                platform="youtube",
+            )
+            controller.fail()
+            await self._save_download_history(video_url, summary, started_at)
+            return summary
+    
+    async def download_single_facebook_post(
+        self,
+        post_url: str,
+        progress_callback: Callable[[str, int, int, str], None],
+        controller: Optional[DownloadController] = None,
+    ) -> FetchSummary:
+        """
+        Download a single Facebook post.
+        
+        Args:
+            post_url: Facebook post URL
+            progress_callback: Callback for progress updates
+            controller: Optional download controller for pause/cancel
+        
+        Returns:
+            FetchSummary with download results
+        """
+        started_at = datetime.utcnow()
+        
+        try:
+            progress_callback("Fetching", 10, 100, "Fetching post...")
+            
+            # Use gallery-dl for single post download
+            download_path = DOWNLOAD_DIR / "facebook" / "single_posts"
+            download_path.mkdir(parents=True, exist_ok=True)
+            
+            # For now, return not implemented
+            raise NotImplementedError("Single Facebook post download not yet fully implemented")
+            
+        except Exception as e:
+            logger.exception(f"Failed to download Facebook post: {e}")
+            summary = FetchSummary(
+                username=post_url,
+                profile_id="",
+                total_posts_found=0,
+                new_posts=0,
+                existing_posts=0,
+                media_downloaded=0,
+                media_failed=1,
+                errors=[str(e)],
+                success=False,
+                platform="facebook",
+            )
+            controller.fail()
+            await self._save_download_history(post_url, summary, started_at)
+            return summary

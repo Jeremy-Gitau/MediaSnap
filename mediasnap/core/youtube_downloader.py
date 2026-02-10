@@ -271,6 +271,75 @@ class YouTubeDownloader:
         
         return progress_hook
     
+    async def download_video(
+        self,
+        video_url: str,
+        progress_callback: ProgressCallback = None,
+    ) -> dict:
+        """
+        Download a single YouTube video.
+        
+        Args:
+            video_url: YouTube video URL
+            progress_callback: Optional callback(stage, current, total, message)
+        
+        Returns:
+            Dictionary with download info
+        """
+        if not self._is_youtube_url(video_url):
+            raise DownloadError("Invalid YouTube video URL")
+        
+        logger.info(f"Starting YouTube video download: {video_url}")
+        
+        # Create download directory
+        download_path = DOWNLOAD_DIR / "youtube" / "single_videos"
+        download_path.mkdir(parents=True, exist_ok=True)
+        
+        # Configure yt-dlp options for single video
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': str(download_path / '%(title)s.%(ext)s'),
+            'nocheckcertificate': True,
+            'ignoreerrors': True,
+            'no_warnings': True,
+            'quiet': True,
+            'progress_hooks': [self._create_progress_hook(progress_callback)],
+        }
+        
+        # Add ffmpeg if available
+        if _check_ffmpeg():
+            ydl_opts['postprocessors'] = [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }]
+        
+        # Add aria2c for faster downloads if available
+        if shutil.which("aria2c"):
+            ydl_opts['external_downloader'] = 'aria2c'
+            ydl_opts['external_downloader_args'] = ['-x', '16', '-s', '16', '-k', '1M']
+        
+        try:
+            if progress_callback:
+                progress_callback("Fetching", 5, 100, "Getting video info...")
+            
+            # Download the video
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+                
+                if progress_callback:
+                    progress_callback("Complete", 100, 100, f"✓ Downloaded: {info.get('title', 'video')}")
+                
+                return {
+                    "success": True,
+                    "title": info.get("title", "video"),
+                    "id": info.get("id", ""),
+                    "download_path": str(download_path),
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to download video: {e}")
+            raise DownloadError(f"Video download failed: {str(e)}")
+    
     def _download_with_ytdlp(self, url: str, options: dict):
         """
         Download videos using yt-dlp (blocking operation).
