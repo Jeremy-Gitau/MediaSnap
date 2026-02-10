@@ -22,6 +22,7 @@ from mediasnap.utils.config import (
     RETRY_INITIAL_WAIT,
     RETRY_MAX_WAIT,
     RETRY_MULTIPLIER,
+    SESSION_DIR,
 )
 from mediasnap.utils.logging import get_logger
 
@@ -30,16 +31,17 @@ logger = get_logger(__name__)
 
 def _find_session_file() -> Optional[str]:
     """Find an existing session file."""
-    session_dir = Path(__file__).parent.parent.parent / ".sessions"
-    if not session_dir.exists():
+    if not SESSION_DIR.exists():
+        logger.debug(f"Session directory does not exist: {SESSION_DIR}")
         return None
     
-    # Look for any session file
-    session_files = list(session_dir.glob("*_session"))
+    # Look for any session file (Instagram sessions end with _session)
+    session_files = list(SESSION_DIR.glob("*_session"))
     if session_files:
         logger.info(f"Found session file: {session_files[0]}")
         return str(session_files[0])
     
+    logger.debug(f"No session files found in {SESSION_DIR}")
     return None
 
 

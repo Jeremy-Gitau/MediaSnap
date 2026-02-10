@@ -7,7 +7,7 @@ for use with MediaSnap's LinkedIn downloading features.
 
 IMPORTANT NOTES:
 - Your credentials are used ONLY to authenticate with LinkedIn
-- The session is saved locally in ~/.mediasnap/linkedin_session.pkl
+- The session is saved locally (location shown during authentication)
 - Your password is encrypted and stored securely
 - MediaSnap uses the unofficial linkedin-api library
 - This may violate LinkedIn's Terms of Service - use at your own risk
@@ -20,6 +20,11 @@ import getpass
 import pickle
 import sys
 from pathlib import Path
+
+# Add parent directory to path to import mediasnap
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from mediasnap.utils.config import SESSION_DIR
 
 
 def main():
@@ -37,7 +42,7 @@ def main():
     print("📋 How it works:")
     print("   1. You enter your LinkedIn email and password")
     print("   2. We authenticate with LinkedIn")
-    print("   3. Session is saved to ~/.mediasnap/linkedin_session.pkl")
+    print(f"   3. Session is saved to {SESSION_DIR}")
     print("   4. MediaSnap will use this session for downloads")
     print()
 
@@ -96,12 +101,8 @@ def main():
             print("then run this script again.")
             sys.exit(1)
 
-        # Create config directory
-        config_dir = Path.home() / ".mediasnap"
-        config_dir.mkdir(exist_ok=True)
-
-        # Save session
-        session_file = config_dir / "linkedin_session.pkl"
+        # Save session to centralized location
+        session_file = SESSION_DIR / "linkedin_session.pkl"
         session_data = {
             "username": email,
             "password": password,
@@ -110,8 +111,11 @@ def main():
         with open(session_file, "wb") as f:
             pickle.dump(session_data, f)
 
-        # Set file permissions (owner read/write only)
-        session_file.chmod(0o600)
+        # Set file permissions (owner read/write only) - Unix/Mac only
+        try:
+            session_file.chmod(0o600)
+        except Exception:
+            pass  # Windows doesn't support chmod
 
         print(f"✅ Session saved to: {session_file}")
         print()
@@ -128,7 +132,7 @@ def main():
         print("   3. Click 'Fetch Profile' to start downloading")
         print()
         print("📂 Downloads will be saved to:")
-        print(f"   {Path.cwd() / 'downloads' / 'linkedin'}")
+        print(f"   {SESSION_DIR.parent / 'downloads' / 'linkedin'}")
         print()
         print("⚠️  Remember: Use responsibly and respect LinkedIn's ToS")
         print()

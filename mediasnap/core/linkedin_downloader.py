@@ -9,7 +9,7 @@ import aiofiles
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from mediasnap.utils.config import DOWNLOAD_DIR
+from mediasnap.utils.config import DOWNLOAD_DIR, SESSION_DIR
 from mediasnap.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -80,11 +80,11 @@ class LinkedInDownloader:
         try:
             from linkedin_api import Linkedin
 
-            # Check for session file
-            session_file = Path.home() / ".mediasnap" / "linkedin_session.pkl"
+            # Check for session file in centralized location
+            session_file = SESSION_DIR / "linkedin_session.pkl"
 
             if session_file.exists():
-                logger.info("Loading LinkedIn session from file")
+                logger.info(f"Loading LinkedIn session from {session_file}")
                 # Load pickled session
                 import pickle
 
@@ -96,7 +96,8 @@ class LinkedInDownloader:
                 return True
             else:
                 logger.error(
-                    "No LinkedIn session found. Run scripts/linkedin_login.py first"
+                    f"No LinkedIn session found at {session_file}. "
+                    "Please login via the UI or run scripts/linkedin_login.py first"
                 )
                 return False
 

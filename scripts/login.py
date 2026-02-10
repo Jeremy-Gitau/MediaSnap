@@ -10,11 +10,11 @@ import getpass
 import sys
 from pathlib import Path
 
-import instaloader
+# Add parent directory to path to import mediasnap
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Path to save session
-SESSION_DIR = Path(__file__).parent / ".sessions"
-SESSION_DIR.mkdir(exist_ok=True)
+import instaloader
+from mediasnap.utils.config import SESSION_DIR
 
 
 def login():
@@ -24,6 +24,7 @@ def login():
     print("="*60)
     print("\nThis will save your Instagram session to avoid 403 errors.")
     print("Your password is NOT saved - only the session cookie.")
+    print(f"\nSession will be saved to: {SESSION_DIR}")
     print("\n" + "="*60 + "\n")
     
     # Get credentials
@@ -43,7 +44,6 @@ def login():
         # Create loader
         loader = instaloader.Instaloader(
             quiet=False,
-            dirname_pattern=str(SESSION_DIR),
         )
         
         # Login

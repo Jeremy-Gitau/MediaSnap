@@ -1,24 +1,54 @@
 """Configuration management for MediaSnap."""
 
 import os
+import sys
 from pathlib import Path
 from typing import List
 
-# Project root directory
+
+def _get_base_directory() -> Path:
+    """
+    Get the base directory for MediaSnap data.
+    
+    When running as PyInstaller executable, use user's home directory.
+    When running from source, use project root.
+    
+    Returns:
+        Base directory path
+    """
+    # Check if running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable - use user's home directory
+        base_dir = Path.home() / ".mediasnap"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        return base_dir
+    else:
+        # Running from source - use project root
+        return Path(__file__).parent.parent.parent
+
+
+# Base directory (handles both development and executable)
+BASE_DIR = _get_base_directory()
+
+# Project root directory (for source code)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Database configuration
-DB_PATH = PROJECT_ROOT / "mediasnap.db"
+DB_PATH = BASE_DIR / "mediasnap.db"
 DB_URL = f"sqlite:///{DB_PATH}"
 
 # Download configuration
-DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
+DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 # Logs configuration
-LOG_DIR = PROJECT_ROOT / "logs"
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / "mediasnap.log"
+
+# Session configuration (for Instagram/LinkedIn authentication)
+SESSION_DIR = BASE_DIR / ".sessions"
+SESSION_DIR.mkdir(exist_ok=True)
 
 # Rate limiting configuration
 REQUEST_DELAY = 3.0  # Seconds between requests
