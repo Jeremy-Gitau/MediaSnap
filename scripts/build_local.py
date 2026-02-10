@@ -53,9 +53,42 @@ def build_windows():
         return False
 
 
-def build_unix():
-    """Build executable for macOS/Linux."""
-    print("\n🏗️  Building executable for", platform.system())
+def build_linux():
+    """Build Linux executable using spec file."""
+    print("\n🏗️  Building Linux executable...")
+    print("=" * 50)
+    
+    spec_file = Path("build_linux.spec")
+    if not spec_file.exists():
+        print(f"❌ Spec file not found: {spec_file}")
+        return False
+    
+    cmd = ["pyinstaller", str(spec_file), "--clean"]
+    result = subprocess.run(cmd)
+    
+    if result.returncode == 0:
+        exe_path = Path("dist/MediaSnap")
+        if exe_path.exists():
+            size_mb = exe_path.stat().st_size / (1024 * 1024)
+            print("\n✅ Build successful!")
+            print(f"📦 Executable: {exe_path}")
+            print(f"📊 Size: {size_mb:.1f} MB")
+            
+            # Make executable
+            os.chmod(exe_path, 0o755)
+            print("✅ Made executable")
+            return True
+        else:
+            print("\n❌ Build completed but executable not found")
+            return False
+    else:
+        print("\n❌ Build failed")
+        return False
+
+
+def build_macos():
+    """Build macOS executable using simple approach."""
+    print("\n🏗️  Building macOS executable...")
     print("=" * 50)
     
     app_name = "MediaSnap"
@@ -78,7 +111,7 @@ def build_unix():
             print(f"📦 Executable: {exe_path}")
             print(f"📊 Size: {size_mb:.1f} MB")
             
-            # Make executable on Unix
+            # Make executable
             os.chmod(exe_path, 0o755)
             print("✅ Made executable")
             return True
@@ -108,8 +141,10 @@ def main():
     
     if system == "Windows":
         success = build_windows()
-    elif system in ["Darwin", "Linux"]:
-        success = build_unix()
+    elif system == "Linux":
+        success = build_linux()
+    elif system == "Darwin":
+        success = build_macos()
     else:
         print(f"❌ Unsupported platform: {system}")
         sys.exit(1)
