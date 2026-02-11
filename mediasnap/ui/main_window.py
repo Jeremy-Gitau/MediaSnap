@@ -34,7 +34,7 @@ from mediasnap.ui.styles import (
     WINDOW_WIDTH,
 )
 from mediasnap.utils.logging import get_logger, setup_logging
-from mediasnap.utils.config import SESSION_DIR, DOWNLOAD_DIR, BASE_DIR
+from mediasnap.utils.config import DOWNLOAD_DIR, BASE_DIR
 import sys
 
 logger = get_logger(__name__)
@@ -79,7 +79,6 @@ class MainWindow(ttkb.Window):
         logger.info(f"Running as: {'Executable' if is_executable else 'Python Script'}")
         logger.info(f"Base directory: {BASE_DIR}")
         logger.info(f"Downloads: {DOWNLOAD_DIR}")
-        logger.info(f"Sessions: {SESSION_DIR}")
         logger.info("="*60)
     
     def _is_macos(self) -> bool:
@@ -391,12 +390,13 @@ class MainWindow(ttkb.Window):
         footer_frame = ttk.Frame(main_frame)
         footer_frame.pack(fill=X, pady=(PAD_MEDIUM, 0))
         
-        ttk.Label(
+        footer_info = ttk.Label(
             footer_frame,
             text="💡 Instagram: reels/, images/, carousel/, tagged/ • YouTube: organized by title",
             font=("Helvetica", 9),
             bootstyle=SECONDARY,
-        ).pack()
+        )
+        footer_info.pack(side=LEFT, expand=YES)
     
     def _on_fetch_clicked(self) -> None:
         """Handle fetch button click with authentication checks."""
@@ -634,10 +634,20 @@ class MainWindow(ttkb.Window):
         else:
             self._log("✅ aria2c detected - using 16 connections for faster downloads", tag="success")
         
+        # Important note about Chrome
+        self._log("")
+        self._log("💡 For best results: CLOSE Chrome browser before downloading", tag="info")
+        self._log("   (Chrome rotates cookies while running, causing auth failures)", tag="info")
+        self._log("")
+        
         # Submit async task
         def progress_callback(stage, current, total, message):
-            # Schedule UI update on main thread
-            self.after(0, self._update_progress, stage, current, total, message)
+            # Schedule UI update on main thread (thread-safe)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                # Silently handle if called from wrong thread context
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         # Create download controller
         self.controller = DownloadController()
@@ -670,8 +680,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            # Schedule UI update on main thread
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         # Create download controller
         self.controller = DownloadController()
@@ -703,8 +715,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            # Schedule UI update on main thread
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         # Create download controller
         self.controller = DownloadController()
@@ -757,7 +771,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         self.controller = DownloadController()
         coro = self.service.download_single_youtube_video(video_url, progress_callback, self.controller)
@@ -782,7 +799,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         self.controller = DownloadController()
         coro = self.service.download_single_instagram_post(post_url, progress_callback, self.controller)
@@ -808,7 +828,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         self.controller = DownloadController()
         coro = self.service.download_single_facebook_post(post_url, progress_callback, self.controller)
@@ -852,8 +875,10 @@ class MainWindow(ttkb.Window):
         
         # Submit async task
         def progress_callback(stage, current, total, message):
-            #Schedule UI update on main thread
-            self.after(0, self._update_progress, stage, current, total, message)
+            try:
+                self.after(0, self._update_progress, stage, current, total, message)
+            except Exception as e:
+                logger.debug(f"Progress callback scheduling error: {e}")
         
         # Create download controller
         self.controller = DownloadController()
@@ -1161,8 +1186,29 @@ class MainWindow(ttkb.Window):
         self.current_future = None
         self.progress_bar["value"] = 0
         
-        self._set_status(f"❌ Error: {error}", bootstyle=DANGER)
-        self._log(f"❌ Unexpected error: {error}", error=True)
+        # Hide control buttons
+        self._hide_control_buttons()
+        
+        # Format multi-line error messages properly
+        error_lines = error.split('\\n')
+        
+        # Show first line in status
+        first_line = error_lines[0] if error_lines else error
+        self._set_status(f"❌ {first_line}", bootstyle=DANGER)
+        
+        # Log full error with formatting
+        self._log(f"❌ Error: {error_lines[0]}", error=True)
+        for line in error_lines[1:]:
+            if line.strip():
+                # Color code different parts of the message
+                if "🔐" in line or "Authentication" in line or "Run:" in line:
+                    self._log(f"   {line}", tag="warning")
+                elif "💡" in line or "Alternative:" in line:
+                    self._log(f"   {line}", tag="info")
+                elif "⚠️" in line:
+                    self._log(f"   {line}", tag="warning")
+                else:
+                    self._log(f"   {line}")
         self._log("")
     
     def _set_status(self, text: str, bootstyle: str = SECONDARY) -> None:

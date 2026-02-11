@@ -63,6 +63,8 @@ class MediaSnapService:
         """Initialize service."""
         self.scraper = InstagramScraper()
         self.facebook_scraper = FacebookScraper()
+        self.youtube_downloader = YouTubeDownloader()
+        self.linkedin_downloader = LinkedInDownloader()
     
     async def _save_download_history(
         self,

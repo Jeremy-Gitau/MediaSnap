@@ -37,8 +37,9 @@ class InstaloaderScraper:
             save_metadata=False,
             compress_json=False,
             quiet=False,  # Show retry messages to help debug
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            max_connection_attempts=3,  # Reduce retry attempts
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            max_connection_attempts=1,  # Reduce retry attempts to fail fast
+            request_timeout=10,  # Reduce timeout
         )
         
         # Load session if provided
@@ -121,22 +122,26 @@ class InstaloaderScraper:
             error_msg = str(e).lower()
             if "403" in error_msg or "forbidden" in error_msg:
                 raise ScrapingFailedError(
-                    "Instagram blocked the request (403 Forbidden). "
-                    "This usually means Instagram is blocking unauthenticated scraping. "
-                    "Solutions:\n"
-                    "1. Wait 10-15 minutes and try again\n"
-                    "2. Try a different profile\n"
-                    "3. Login with Instagram credentials (see README for instructions)\n"
-                    "Instagram has become very strict about blocking automated access."
+                    "Instagram blocked the request (403 Forbidden).\n\n"
+                    "🔐 Instagram requires authentication:\n"
+                    "1. Run: python scripts/login.py\n"
+                    "2. Login with your Instagram account\n"
+                    "3. MediaSnap will save session and reuse it\n\n"
+                    "⚠️ Instagram has strict bot detection and blocks unauthenticated access.\n"
+                    "   Using a logged-in session allows MediaSnap to work.\n\n"
+                    "💡 Alternative: Wait 10-15 minutes and try a different profile."
                 )
             elif "429" in error_msg or "rate" in error_msg:
                 raise RateLimitedError(
-                    "Rate limited by Instagram. Please wait 10-15 minutes and try again."
+                    "Rate limited by Instagram.\n\n"
+                    "⏳ Please wait 10-15 minutes and try again.\n"
+                    "💡 Using authenticated sessions (scripts/login.py) helps avoid rate limits."
                 )
             elif "login" in error_msg or "logged" in error_msg:
                 raise ScrapingFailedError(
-                    "Instagram requires login for this profile. "
-                    "Try a different public profile or wait and retry."
+                    "Instagram requires login for this profile.\n\n"
+                    "🔐 Run: python scripts/login.py\n"
+                    "   Then restart the download."
                 )
             else:
                 raise ScrapingFailedError(f"Connection error: {str(e)}")
