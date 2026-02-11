@@ -1,6 +1,8 @@
 """YouTube channel downloader using yt-dlp."""
 
 import asyncio
+import os
+import platform
 import re
 import shutil
 import subprocess
@@ -19,13 +21,104 @@ logger = get_logger(__name__)
 ProgressCallback = Optional[Callable[[str, int, int, str], None]]
 
 
+def _get_extended_path() -> str:
+    """Get extended PATH with common binary locations for executables."""
+    current_path = os.environ.get('PATH', '')
+    
+    # Add common binary paths (especially important for PyInstaller executables)
+    additional_paths = []
+    
+    if platform.system() == 'Darwin':  # macOS
+        additional_paths = [
+            '/usr/local/bin',  # Intel Homebrew
+            '/opt/homebrew/bin',  # Apple Silicon Homebrew
+            '/usr/bin',
+            '/bin',
+        ]
+    elif platform.system() == 'Linux':
+        additional_paths = [
+            '/usr/local/bin',
+            '/usr/bin',
+            '/bin',
+        ]
+    elif platform.system() == 'Windows':
+        additional_paths = [
+            r'C:\Program Files\ffmpeg\bin',
+            r'C:\Program Files\aria2',
+        ]
+    
+    # Combine current PATH with additional paths
+    all_paths = current_path.split(os.pathsep) + additional_paths
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_paths = []
+    for p in all_paths:
+        if p and p not in seen:
+            seen.add(p)
+            unique_paths.append(p)
+    
+    return os.pathsep.join(unique_paths)
+
+
+def _find_executable(name: str) -> Optional[Path]:
+    """Find executable in extended PATH."""
+    # Update PATH temporarily
+    old_path = os.environ.get('PATH', '')
+    os.environ['PATH'] = _get_extended_path()
+    
+    try:
+        result = shutil.which(name)
+        return Path(result) if result else None
+    finally:
+        os.environ['PATH'] = old_path
+
+
 def _check_ffmpeg() -> bool:
     """Check if ffmpeg is installed."""
-    return shutil.which("ffmpeg") is not None
+    return _find_executable("ffmpeg") is not None
+
+
+def _check_aria2c() -> bool:
+    """Check if aria2c is installed."""
+    return _find_executable("aria2c") is not None
+
+
+def _install_ffmpeg() -> bool:
+    """Auto-install ffmpeg via Homebrew on macOS."""
+    if platform.system() != 'Darwin':
+        logger.warning("Auto-install only supported on macOS. Install ffmpeg manually.")
+        return False
+    
+    try:
+        logger.info("📦 ffmpeg not found. Installing via Homebrew...")
+        subprocess.run(
+            ["brew", "install", "ffmpeg"],
+            check=True,
+            capture_output=True,
+            timeout=600,  # 10 minutes for ffmpeg (larger package)
+        )
+        logger.info("✅ ffmpeg installed successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install ffmpeg: {e.stderr.decode() if e.stderr else str(e)}")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("ffmpeg installation timed out")
+        return False
+    except FileNotFoundError:
+        logger.warning("Homebrew not found. Install manually: brew install ffmpeg")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to install ffmpeg: {e}")
+        return False
 
 
 def _install_aria2c() -> bool:
     """Auto-install aria2c via Homebrew on macOS."""
+    if platform.system() != 'Darwin':
+        logger.warning("Auto-install only supported on macOS. Install aria2c manually.")
+        return False
+    
     try:
         logger.info("📦 aria2c not found. Installing via Homebrew...")
         subprocess.run(
@@ -110,17 +203,25 @@ class YouTubeDownloader:
         # Check if ffmpeg is available
         has_ffmpeg = _check_ffmpeg()
         if not has_ffmpeg:
-            logger.warning("ffmpeg not found - videos will be downloaded in single-file format (may be lower quality)")
+            logger.warning("⚠️  ffmpeg not found - videos will be lower quality")
+            logger.info("💻 Attempting to install ffmpeg...")
+            if progress_callback:
+                progress_callback("Setup", 3, 100, "Installing ffmpeg...")
+            if _install_ffmpeg():
+                has_ffmpeg = _check_ffmpeg()
+                if has_ffmpeg:
+                    logger.info("✅ ffmpeg installed and ready!")
         
         # Check if aria2c is available for faster downloads
-        has_aria2c = shutil.which("aria2c") is not None
-        
-        # Auto-install aria2c if not available
+        has_aria2c = _check_aria2c()
         if not has_aria2c:
-            logger.info("💡 Installing aria2c for faster downloads...")
+            logger.info("💻 Attempting to install aria2c for faster downloads...")
             if progress_callback:
                 progress_callback("Setup", 5, 100, "Installing aria2c...")
-            has_aria2c = _install_aria2c()
+            if _install_aria2c():
+                has_aria2c = _check_aria2c()
+                if has_aria2c:
+                    logger.info("✅ aria2c installed and ready!")
         
         # Create download archive file to track downloads and avoid duplicates
         archive_file = download_path / ".youtube_archive.txt"
@@ -314,7 +415,8 @@ class YouTubeDownloader:
             }]
         
         # Add aria2c for faster downloads if available
-        if shutil.which("aria2c"):
+        has_aria2c = _check_aria2c()
+        if has_aria2c:
             ydl_opts['external_downloader'] = 'aria2c'
             ydl_opts['external_downloader_args'] = ['-x', '16', '-s', '16', '-k', '1M']
         

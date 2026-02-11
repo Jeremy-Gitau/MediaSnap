@@ -359,12 +359,25 @@ class MainWindow(ttkb.Window):
         # ═══════════════════════════════════════════════════════
         # ACTIVITY LOG 📝
         # ═══════════════════════════════════════════════════════
+        log_header_frame = ttk.Frame(main_frame)
+        log_header_frame.pack(fill=X, pady=(PAD_MEDIUM, 0))
+        
         log_container = ttk.LabelFrame(
             main_frame,
             text="📝 Activity Log",
             padding=PAD_MEDIUM,
         )
-        log_container.pack(fill=BOTH, expand=YES, pady=PAD_MEDIUM)
+        log_container.pack(fill=BOTH, expand=YES, pady=(0, PAD_MEDIUM))
+        
+        # Add View Full Logs button
+        view_logs_btn = ttk.Button(
+            log_header_frame,
+            text="📋 View Full Logs",
+            command=self._open_log_viewer,
+            bootstyle="info-outline",
+            width=15,
+        )
+        view_logs_btn.pack(side=RIGHT, pady=(0, 5))
         
         self.log_text = scrolledtext.ScrolledText(
             log_container,
@@ -623,13 +636,15 @@ class MainWindow(ttkb.Window):
         self._log("")
         
         # Check for ffmpeg
-        if not shutil.which("ffmpeg"):
+        from mediasnap.core.youtube_downloader import _check_ffmpeg, _check_aria2c
+        
+        if not _check_ffmpeg():
             self._log("⚠️  ffmpeg not found - videos will be lower quality", tag="warning")
             self._log("   💡 Install ffmpeg for best quality: brew install ffmpeg")
             self._log("   📖 See YOUTUBE_SETUP.md for details")
         
         # Check for aria2c
-        if not shutil.which("aria2c"):
+        if not _check_aria2c():
             self._log("📦 aria2c not installed - will auto-install for faster downloads", tag="info")
         else:
             self._log("✅ aria2c detected - using 16 connections for faster downloads", tag="success")
@@ -1246,6 +1261,107 @@ class MainWindow(ttkb.Window):
         
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
+    
+    def _open_log_viewer(self) -> None:
+        """Open a separate window to view full log file."""
+        from mediasnap.utils.config import LOG_FILE
+        
+        # Create log viewer window
+        log_window = tk.Toplevel(self)
+        log_window.title("📋 MediaSnap - Full Logs")
+        log_window.geometry("900x600")
+        log_window.transient(self)
+        
+        # Create main container
+        container = ttk.Frame(log_window, padding=10)
+        container.pack(fill=BOTH, expand=YES)
+        
+        # Header with info
+        header = ttk.Frame(container)
+        header.pack(fill=X, pady=(0, 10))
+        
+        ttk.Label(
+            header,
+            text=f"Log File: {LOG_FILE}",
+            font=("Helvetica", 10),
+            bootstyle=INFO,
+        ).pack(side=LEFT)
+        
+        # Auto-refresh toggle
+        auto_refresh_var = tk.BooleanVar(value=True)
+        auto_refresh_check = ttk.Checkbutton(
+            header,
+            text="Auto-refresh",
+            variable=auto_refresh_var,
+            bootstyle="success-round-toggle",
+        )
+        auto_refresh_check.pack(side=RIGHT, padx=10)
+        
+        # Refresh button
+        refresh_btn = ttk.Button(
+            header,
+            text="🔄 Refresh",
+            command=lambda: self._refresh_log_viewer(log_text, LOG_FILE),
+            bootstyle="info",
+            width=10,
+        )
+        refresh_btn.pack(side=RIGHT)
+        
+        # Log text area
+        log_text = scrolledtext.ScrolledText(
+            container,
+            font=("Courier", 9),
+            wrap=tk.WORD,
+            bg="#1e1e1e" if THEME == "darkly" else "#f8f9fa",
+            fg="#d4d4d4" if THEME == "darkly" else "#212529",
+        )
+        log_text.pack(fill=BOTH, expand=YES)
+        
+        # Initial load
+        self._refresh_log_viewer(log_text, LOG_FILE)
+        
+        # Auto-refresh function
+        def auto_refresh():
+            if auto_refresh_var.get() and log_window.winfo_exists():
+                self._refresh_log_viewer(log_text, LOG_FILE)
+                log_window.after(2000, auto_refresh)  # Refresh every 2 seconds
+        
+        # Start auto-refresh
+        log_window.after(2000, auto_refresh)
+        
+        # Focus on window
+        log_window.focus_force()
+    
+    def _refresh_log_viewer(self, log_text: scrolledtext.ScrolledText, log_file: Path) -> None:
+        """Refresh log viewer content."""
+        try:
+            if log_file.exists():
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Remember scroll position
+                was_at_end = log_text.yview()[1] >= 0.99
+                
+                # Update content
+                log_text.config(state=tk.NORMAL)
+                log_text.delete(1.0, tk.END)
+                log_text.insert(tk.END, content)
+                
+                # Auto-scroll to end if was at end
+                if was_at_end:
+                    log_text.see(tk.END)
+                
+                log_text.config(state=tk.DISABLED)
+            else:
+                log_text.config(state=tk.NORMAL)
+                log_text.delete(1.0, tk.END)
+                log_text.insert(tk.END, "Log file not found.")
+                log_text.config(state=tk.DISABLED)
+        except Exception as e:
+            log_text.config(state=tk.NORMAL)
+            log_text.delete(1.0, tk.END)
+            log_text.insert(tk.END, f"Error reading log file: {e}")
+            log_text.config(state=tk.DISABLED)
     
     def _on_closing(self) -> None:
         """Handle window close event."""
